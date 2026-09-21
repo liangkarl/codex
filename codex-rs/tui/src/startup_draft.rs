@@ -87,7 +87,7 @@ pub(crate) struct StartupDraft {
 
 /// Keeps the existing terminal responsive without owning it or permitting startup submission.
 pub(crate) struct StartupDraftPump {
-    header: Box<dyn HistoryCell>,
+    header: Option<Box<dyn HistoryCell>>,
     bottom_pane: BottomPane,
     events: Pin<Box<dyn Stream<Item = TuiEvent> + Send>>,
     app_event_rx: UnboundedReceiver<AppEvent>,
@@ -122,7 +122,7 @@ impl StartupDraft {
             tui,
             terminal_restore_guard,
             pump: StartupDraftPump {
-                header: startup_session_header(/*config*/ None),
+                header: Some(startup_session_header(/*config*/ None)),
                 bottom_pane,
                 events,
                 app_event_rx,
@@ -165,10 +165,17 @@ impl StartupDraft {
 }
 
 impl StartupDraftPump {
+    fn header_renderable(&self) -> Option<&dyn Renderable> {
+        self.header.as_ref().map(|header| header as &dyn Renderable)
+    }
+
     /// Refresh the session header and safe editor shortcuts without enabling modal editing.
     pub(crate) fn apply_config(&mut self, config: &Config) {
         let local_settings = crate::local_settings::LocalSettings::from(config);
-        self.header = startup_session_header(Some(config));
+        self.header = local_settings
+            .tui
+            .show_header
+            .then(|| startup_session_header(Some(config)));
         self.bottom_pane
             .set_disable_paste_burst(local_settings.tui.disable_paste_burst.unwrap_or(false));
         self.bottom_pane.request_redraw();
@@ -380,8 +387,11 @@ impl StartupDraftPump {
                 .schedule_frame_in(ChatComposer::recommended_paste_flush_delay());
         }
         self.bottom_pane.pre_draw_tick();
-        let renderable =
-            startup_draft_renderable(&self.header, &self.bottom_pane, self.session_action);
+        let renderable = startup_draft_renderable(
+            self.header_renderable(),
+            &self.bottom_pane,
+            self.session_action,
+        );
         let desired_height = renderable.desired_height(screen_size.width);
         tui.draw_with_resize_reflow(desired_height, screen_size, |frame| {
             let area = frame.area();
@@ -470,12 +480,14 @@ fn startup_session_header(config: Option<&Config>) -> Box<dyn HistoryCell> {
 }
 
 fn startup_draft_renderable<'a>(
-    header: &'a dyn Renderable,
+    header: Option<&'a dyn Renderable>,
     bottom_pane: &'a BottomPane,
     session_action: StartupDraftSessionAction,
 ) -> RenderableItem<'a> {
     let mut renderable = FlexRenderable::new();
-    renderable.push(/*flex*/ 1, RenderableItem::Borrowed(header));
+    if let Some(header) = header {
+        renderable.push(/*flex*/ 1, RenderableItem::Borrowed(header));
+    }
     let loading_message = match session_action {
         StartupDraftSessionAction::New => None,
         StartupDraftSessionAction::Resume => Some("  Resuming session…"),

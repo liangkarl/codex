@@ -789,6 +789,26 @@ async fn session_info_first_event_suppresses_tooltips_and_nux() {
 }
 
 #[tokio::test]
+async fn session_info_hides_header_when_disabled() {
+    let mut config = test_config().await;
+    config.tui_show_header = false;
+    let cell = new_session_info(
+        &config,
+        &crate::local_settings::LocalSettings::from(&config),
+        "gpt-5",
+        &session_configured_event("gpt-5"),
+        /*is_first_event*/ true,
+        /*tooltip_override*/ None,
+        Some(PlanType::Free),
+        /*show_fast_status*/ false,
+    );
+
+    let rendered = render_transcript(&cell).join("\n");
+    assert!(!rendered.contains("OpenAI Codex"));
+    assert!(rendered.contains("To get started"));
+}
+
+#[tokio::test]
 async fn session_info_hides_tooltips_when_disabled() {
     let mut config = test_config().await;
     config.show_tooltips = false;

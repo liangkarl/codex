@@ -28,7 +28,7 @@ where
 {
     let (tx, rx) = unbounded_channel();
     StartupDraftPump {
-        header: startup_session_header(/*config*/ None),
+        header: Some(startup_session_header(/*config*/ None)),
         bottom_pane: startup_draft_bottom_pane(
             AppEventSender::new(tx),
             FrameRequester::test_dummy(),
@@ -78,12 +78,15 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
         pump.session_action = session_action;
         pump.bottom_pane
             .set_composer_text(text.to_string(), Vec::new(), Vec::new());
-        let renderable =
-            startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action);
+        let renderable = startup_draft_renderable(
+            pump.header_renderable(),
+            &pump.bottom_pane,
+            pump.session_action,
+        );
         assert_eq!(
             renderable.desired_height(width),
             startup_draft_renderable(
-                &pump.header,
+                pump.header_renderable(),
                 &pump.bottom_pane,
                 StartupDraftSessionAction::New,
             )
@@ -114,7 +117,11 @@ fn startup_draft_renders_full_empty_and_multiline_composer_frames() {
             .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
 
         assert!(
-            cursor.1 >= pump.header.desired_height(width),
+            cursor.1
+                >= pump
+                    .header
+                    .as_deref()
+                    .map_or(0, |header| header.desired_height(width)),
             "the composer cursor should remain below the startup header"
         );
         snapshots.push(format!("{label} ({width} columns):\n{frame}"));
@@ -128,8 +135,11 @@ async fn startup_draft_clears_loading_status_when_starting_fresh() {
     let mut snapshots = Vec::new();
     let render_frame = |pump: &StartupDraftPump| {
         let width = 48;
-        let renderable =
-            startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action);
+        let renderable = startup_draft_renderable(
+            pump.header_renderable(),
+            &pump.bottom_pane,
+            pump.session_action,
+        );
         let area = Rect::new(
             /*x*/ 0,
             /*y*/ 0,
@@ -220,12 +230,17 @@ async fn startup_draft_hydrates_its_header_without_moving_the_composer() {
         .expect("build startup configuration");
     let mut pump = startup_test_pump(std::iter::empty());
     let width = 80;
-    let initial_height =
-        startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action)
-            .desired_height(width);
+    let initial_height = startup_draft_renderable(
+        pump.header_renderable(),
+        &pump.bottom_pane,
+        pump.session_action,
+    )
+    .desired_height(width);
 
     assert_eq!(
-        pump.header.raw_lines().last().map(ToString::to_string),
+        pump.header
+            .as_deref()
+            .and_then(|header| header.raw_lines().last().map(ToString::to_string)),
         Some("directory: loading".to_string())
     );
     pump.apply_config(&config);
@@ -237,14 +252,36 @@ async fn startup_draft_hydrates_its_header_without_moving_the_composer() {
         )
     );
     assert_eq!(
-        pump.header.raw_lines().last().map(ToString::to_string),
+        pump.header
+            .as_deref()
+            .and_then(|header| header.raw_lines().last().map(ToString::to_string)),
         Some(expected_directory)
     );
     assert_eq!(
-        startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action)
-            .desired_height(width),
+        startup_draft_renderable(
+            pump.header_renderable(),
+            &pump.bottom_pane,
+            pump.session_action,
+        )
+        .desired_height(width),
         initial_height
     );
+}
+
+#[tokio::test]
+async fn startup_draft_hides_header_when_disabled() {
+    let codex_home = tempfile::tempdir().expect("create temporary Codex home");
+    let mut config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .build()
+        .await
+        .expect("build startup configuration");
+    config.tui_show_header = false;
+    let mut pump = startup_test_pump(std::iter::empty());
+
+    pump.apply_config(&config);
+
+    assert!(pump.header.is_none());
 }
 
 #[test]
@@ -687,7 +724,11 @@ async fn startup_draft_waits_for_onboarding_before_accepting_input() {
         .expect("show the composer after onboarding finishes");
     assert!(!tui.terminal.viewport_area.is_empty());
     let area = tui.terminal.viewport_area;
-    let renderable = startup_draft_renderable(&pump.header, &pump.bottom_pane, pump.session_action);
+    let renderable = startup_draft_renderable(
+        pump.header_renderable(),
+        &pump.bottom_pane,
+        pump.session_action,
+    );
     let mut buffer = Buffer::empty(area);
     renderable.render(area, &mut buffer);
     let visible_frame = (area.top()..area.bottom())

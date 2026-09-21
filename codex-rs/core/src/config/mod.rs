@@ -760,6 +760,9 @@ pub struct Config {
     /// Generate automatic TUI recaps. Manual `/recap` remains available when disabled.
     pub tui_auto_recap: bool,
 
+    /// Show the session header at startup and after clearing the terminal.
+    pub tui_show_header: bool,
+
     /// Persisted startup availability NUX state for model tooltips.
     pub model_availability_nux: ModelAvailabilityNuxConfig,
 
@@ -4394,6 +4397,7 @@ impl Config {
                 .map(|t| t.show_server_version_notice)
                 .unwrap_or(true),
             tui_auto_recap: cfg.tui.as_ref().map(|t| t.auto_recap).unwrap_or(/*default*/ true),
+            tui_show_header: cfg.tui.as_ref().map(|t| t.show_header).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
                 .as_ref()

@@ -774,6 +774,11 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub auto_recap: bool,
 
+    /// Show the session header at startup and after clearing the terminal.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub show_header: bool,
+
     /// When true, disables burst-paste detection for typed input entirely.
     /// All characters are inserted as they are received, and no buffering
     /// or placeholder replacement will occur for fast keypress bursts.

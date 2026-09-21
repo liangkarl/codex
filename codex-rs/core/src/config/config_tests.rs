@@ -1264,6 +1264,7 @@ fn config_toml_deserializes_model_availability_nux() {
             show_tooltips: true,
             show_server_version_notice: true,
             auto_recap: true,
+            show_header: true,
             disable_paste_burst: None,
             vim_mode_default: false,
             question_esc_back: true,
@@ -1398,6 +1399,38 @@ async fn tui_auto_recap_defaults_and_cli_overrides() -> anyhow::Result<()> {
 
         assert_eq!(
             config.tui_auto_recap, expected,
+            "config: {toml}, override: {override_value:?}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn tui_show_header_defaults_and_cli_overrides() -> anyhow::Result<()> {
+    for (toml, override_value, expected) in [
+        ("", None, true),
+        ("[tui]", None, true),
+        ("[tui]\nshow_header = true", None, true),
+        ("[tui]\nshow_header = false", None, false),
+        ("[tui]\nshow_header = true", Some(false), false),
+        ("[tui]\nshow_header = false", Some(true), true),
+    ] {
+        let codex_home = TempDir::new()?;
+        std::fs::write(codex_home.path().join(CONFIG_TOML_FILE), toml)?;
+        let config = ConfigBuilder::without_managed_config_for_tests()
+            .codex_home(codex_home.path().to_path_buf())
+            .fallback_cwd(Some(codex_home.path().to_path_buf()))
+            .cli_overrides(
+                override_value
+                    .into_iter()
+                    .map(|enabled| ("tui.show_header".to_string(), TomlValue::Boolean(enabled)))
+                    .collect(),
+            )
+            .build()
+            .await?;
+
+        assert_eq!(
+            config.tui_show_header, expected,
             "config: {toml}, override: {override_value:?}"
         );
     }
@@ -4281,6 +4314,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             show_tooltips: true,
             show_server_version_notice: true,
             auto_recap: true,
+            show_header: true,
             disable_paste_burst: None,
             vim_mode_default: false,
             question_esc_back: true,

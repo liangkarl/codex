@@ -5852,6 +5852,17 @@ async fn clear_ui_header_shows_fast_status_for_fast_capable_models() {
     assert_app_snapshot!("clear_ui_header_fast_status_fast_capable_models", rendered);
 }
 
+#[tokio::test]
+async fn clear_ui_header_is_empty_when_disabled() {
+    let mut app = make_test_app().await;
+    app.local_settings.tui.show_header = false;
+
+    assert!(
+        app.clear_ui_header_lines_with_version(/*width*/ 80, "<VERSION>")
+            .is_empty()
+    );
+}
+
 async fn make_test_app() -> App {
     let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
     let config = chat_widget.config_ref().clone();
