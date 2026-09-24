@@ -12,6 +12,7 @@ fn new_test_sparkle() -> Sparkle {
         model: "astra".to_string(),
         whimsy: true,
         animations: true,
+        prompt_effects: true,
         started: Instant::now(),
     }
 }
@@ -170,6 +171,7 @@ fn model_changes_and_disable_setting_control_sparkle() {
             let mut settings = Tui {
                 whimsy: true,
                 animations: true,
+                prompt_effects: true,
                 ..Tui::default()
             };
             pane.set_astra_sparkle("gpt-6-astra", &settings);
@@ -225,6 +227,17 @@ fn model_changes_and_disable_setting_control_sparkle() {
                     (whimsy && animations).then_some((230, 216, 255)),
                 );
             }
+            settings.whimsy = true;
+            settings.animations = true;
+            settings.prompt_effects = false;
+            pane.set_astra_sparkle("astra", &settings);
+            assert_eq!(
+                pane.composer
+                    .astra_sparkle
+                    .as_ref()
+                    .and_then(Sparkle::enabled_foreground),
+                None,
+            );
         },
     );
 }

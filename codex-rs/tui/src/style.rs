@@ -9,6 +9,8 @@ use crate::terminal_palette::rgb_color;
 use crate::terminal_palette::stdout_color_level;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = (0, 95, 135);
 
@@ -45,6 +47,17 @@ const TABLE_SEPARATOR_FG_ALPHA: f32 = 0.20;
 
 pub fn user_message_style() -> Style {
     user_message_style_for(default_bg())
+}
+
+pub(crate) fn normalize_prompt_symbol(symbol: &str) -> String {
+    if symbol.graphemes(true).count() == 1
+        && symbol.width() == 1
+        && !symbol.chars().all(char::is_whitespace)
+    {
+        symbol.to_string()
+    } else {
+        codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string()
+    }
 }
 
 pub fn proposed_plan_style() -> Style {

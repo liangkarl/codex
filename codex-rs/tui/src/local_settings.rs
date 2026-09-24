@@ -28,6 +28,8 @@ impl From<&Config> for LocalSettings {
                 notification_settings: config.tui_notifications.clone(),
                 animations: config.animations,
                 whimsy: config.tui_whimsy,
+                prompt_symbol: config.tui_prompt_symbol.clone(),
+                prompt_effects: config.tui_prompt_effects,
                 show_tooltips: config.show_tooltips,
                 show_server_version_notice: config.tui_show_server_version_notice,
                 auto_recap: config.tui_auto_recap,

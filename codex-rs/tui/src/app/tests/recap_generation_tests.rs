@@ -43,6 +43,8 @@ fn prepare_eligible_recap(app: &mut App, thread_id: ThreadId) {
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }));
     let ready_at = Instant::now() - recap::RECAP_DELAY;
     app.recap.note_focus_lost(ready_at);
@@ -205,6 +207,8 @@ async fn manual_recap_works_when_auto_recap_disabled() -> Result<()> {
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }));
     let (mut app_server, _requests, proxy) = start_recording_remote_app_server(&app.config).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -385,6 +389,8 @@ async fn recap_generation_uses_remote_workspace_cwd() -> Result<()> {
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }));
 
     app.request_recap(&app_server, ThreadId::new(), RecapTrigger::Automatic);

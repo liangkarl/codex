@@ -54,6 +54,8 @@ async fn startup_warnings_preserve_stream_repair_and_backtrack_selection() -> Re
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
         spoken: false,
+        prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+        prompt_effects: true,
     })];
     app.transcript_reflow.mark_resize_requested_during_stream();
     insert_warnings(&mut app, &mut tui, &["First warning"]);

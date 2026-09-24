@@ -178,6 +178,10 @@ impl StartupDraftPump {
             .then(|| startup_session_header(Some(config)));
         self.bottom_pane
             .set_disable_paste_burst(local_settings.tui.disable_paste_burst.unwrap_or(false));
+        self.bottom_pane.set_prompt_appearance(
+            &local_settings.tui.prompt_symbol,
+            local_settings.tui.prompt_effects,
+        );
         self.bottom_pane.request_redraw();
         if let Ok(keymap) = RuntimeKeymap::from_config(&local_settings.tui.keymap) {
             self.bottom_pane.set_keymap_bindings(&keymap);

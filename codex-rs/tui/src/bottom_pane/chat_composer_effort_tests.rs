@@ -96,6 +96,22 @@ fn effort_composer_restored_baseline_and_reduced_motion_do_not_start() {
 }
 
 #[test]
+fn disabled_prompt_effects_do_not_start_effort_animations() {
+    let (mut composer, _rx) = new_test_composer();
+    composer.set_status_line_enabled(/*enabled*/ true);
+    composer.set_status_line(Some(Line::from("gpt-5.4 high · main")));
+    composer.set_active_reasoning_effort_baseline(Some(&ReasoningEffort::High));
+    composer.set_prompt_appearance(">", /*effects_enabled*/ false);
+
+    assert!(composer.set_active_reasoning_effort(
+        Some(&ReasoningEffort::Ultra),
+        /*animations_enabled*/ true,
+    ));
+    assert!(composer.effort_ignition.is_none());
+    assert!(composer.effort_status_line_transition.is_none());
+}
+
+#[test]
 fn effort_transition_never_replaces_a_footer_flash() {
     let (mut composer, _rx) = new_test_composer();
     composer.set_status_line_enabled(/*enabled*/ true);
@@ -157,12 +173,13 @@ fn effort_transition_keeps_the_full_footer_row() {
 }
 
 #[test]
-fn ultra_accent_upgrades_prompt_glyph() {
+fn ultra_accent_preserves_configured_prompt_glyph() {
     snapshot_composer_state_with_width(
-        "ultra_accent_upgrades_prompt_glyph",
+        "ultra_accent_preserves_configured_prompt_glyph",
         /*width*/ 60,
         /*enhanced_keys_supported*/ false,
         |composer| {
+            composer.set_prompt_appearance(">", /*effects_enabled*/ true);
             composer.set_active_reasoning_effort(
                 Some(&ReasoningEffort::Ultra),
                 /*animations_enabled*/ true,

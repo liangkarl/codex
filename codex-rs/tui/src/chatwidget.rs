@@ -1381,11 +1381,13 @@ impl ChatWidget {
             || !display.local_images.is_empty()
             || !display.remote_image_urls.is_empty()
         {
-            self.add_to_history(history_cell::new_user_prompt(
+            self.add_to_history(history_cell::new_user_prompt_with_appearance(
                 display.message,
                 display.text_elements,
                 display.local_images,
                 display.remote_image_urls,
+                &self.local_settings.tui.prompt_symbol,
+                self.local_settings.tui.prompt_effects,
             ));
         }
     }

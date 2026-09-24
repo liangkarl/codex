@@ -59,6 +59,8 @@ async fn transcript_flag_off_preserves_viewer_and_backtracking() -> Result<()> {
                 local_image_paths: Vec::new(),
                 remote_image_urls: Vec::new(),
                 spoken: false,
+                prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+                prompt_effects: true,
             }) as Arc<dyn HistoryCell>
         })
         .to_vec();

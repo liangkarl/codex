@@ -226,6 +226,8 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         tui_notifications: TuiNotificationSettings::default(),
         animations: true,
         tui_whimsy: true,
+        tui_prompt_symbol: "›".to_string(),
+        tui_prompt_effects: true,
         show_tooltips: true,
         tui_show_server_version_notice: true,
         tui_auto_recap: true,

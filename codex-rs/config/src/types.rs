@@ -759,6 +759,16 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub whimsy: bool,
 
+    /// Symbol shown to the left of the composer input.
+    /// Must be a non-whitespace grapheme occupying exactly one terminal column. Defaults to `›`.
+    #[serde(default = "default_prompt_symbol")]
+    pub prompt_symbol: String,
+
+    /// Show the composer background and model/reasoning prompt effects.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub prompt_effects: bool,
+
     /// Show startup tooltips in the TUI welcome screen.
     /// Defaults to `true`.
     #[serde(default = "default_true")]
@@ -881,6 +891,12 @@ pub struct Tui {
 
 const fn default_true() -> bool {
     true
+}
+
+pub const DEFAULT_PROMPT_SYMBOL: &str = "›";
+
+fn default_prompt_symbol() -> String {
+    DEFAULT_PROMPT_SYMBOL.to_string()
 }
 
 /// Settings for notices we display to users via the tui and app-server clients

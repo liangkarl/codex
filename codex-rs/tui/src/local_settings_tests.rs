@@ -13,6 +13,8 @@ async fn local_load_preserves_defaults_and_resolved_overrides() -> anyhow::Resul
 [tui]
 animations = false
 whimsy = false
+prompt_symbol = ">"
+prompt_effects = false
 show_tooltips = false
 show_server_version_notice = false
 auto_recap = false
@@ -45,6 +47,8 @@ fast_default_opt_out = true
         if !config_text.is_empty() {
             expected.animations = false;
             expected.whimsy = false;
+            expected.prompt_symbol = ">".to_string();
+            expected.prompt_effects = false;
             expected.show_tooltips = false;
             expected.show_server_version_notice = false;
             expected.auto_recap = false;

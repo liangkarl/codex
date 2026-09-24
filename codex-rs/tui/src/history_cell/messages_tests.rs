@@ -107,6 +107,22 @@ fn spoken_user_messages_have_a_red_chevron_without_changing_raw_text() {
     insta::assert_snapshot!("spoken_user_prompt", format!("{buf:?}"));
 }
 
+#[test]
+fn user_message_appearance_uses_the_configured_prompt_symbol() {
+    let cell = new_user_prompt_with_appearance(
+        "hello".to_string(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        ">",
+        /*prompt_effects*/ false,
+    );
+    let lines = cell.display_lines(/*width*/ 40);
+
+    assert!(lines.iter().any(|line| line.to_string() == "> hello"));
+    assert!(lines.iter().all(|line| line.style.bg.is_none()));
+}
+
 fn replace_cached_lines(
     cell: &AgentMarkdownCell,
     update_key: impl FnOnce(&mut MarkdownRenderCacheKey),

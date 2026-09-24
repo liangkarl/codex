@@ -751,6 +751,12 @@ pub struct Config {
     /// Enable decorative TUI effects such as Astra composer stars.
     pub tui_whimsy: bool,
 
+    /// Symbol shown to the left of the TUI composer input.
+    pub tui_prompt_symbol: String,
+
+    /// Show the composer background and model/reasoning prompt effects.
+    pub tui_prompt_effects: bool,
+
     /// Show startup tooltips in the TUI welcome screen.
     pub show_tooltips: bool,
 
@@ -4390,6 +4396,12 @@ impl Config {
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             tui_whimsy: cfg.tui.as_ref().map(|t| t.whimsy).unwrap_or(true),
+            tui_prompt_symbol: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.prompt_symbol.clone())
+                .unwrap_or_else(|| codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string()),
+            tui_prompt_effects: cfg.tui.as_ref().map(|t| t.prompt_effects).unwrap_or(true),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
             tui_show_server_version_notice: cfg
                 .tui

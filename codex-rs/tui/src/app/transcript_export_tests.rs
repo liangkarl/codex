@@ -26,6 +26,8 @@ fn markdown_transcript_preserves_messages_and_formats_activity() {
             text_elements: Vec::new(),
             local_image_paths,
             remote_image_urls: Vec::new(),
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }) as Arc<dyn HistoryCell>
     };
     let cells = vec![

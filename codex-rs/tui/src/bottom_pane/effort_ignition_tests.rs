@@ -162,16 +162,17 @@ fn prompt_accent_degrades_with_terminal_color_support() {
 }
 
 #[test]
-fn max_and_ultra_prompts_render_their_accent_and_glyph() {
+fn max_and_ultra_prompts_render_their_accent_without_replacing_the_glyph() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 1, /*height*/ 1,
     );
-    for (tier, glyph, color) in [
-        (EffortTier::Max, "›", Color::Yellow),
-        (EffortTier::Ultra, "»", Color::Magenta),
+    for (tier, color) in [
+        (EffortTier::Max, Color::Yellow),
+        (EffortTier::Ultra, Color::Magenta),
     ] {
         let mut buf = Buffer::empty(area);
         tier.prompt_for(
+            ">",
             /*charge*/ 1.0,
             Some((224, 220, 214)),
             Some((18, 22, 28)),
@@ -179,7 +180,7 @@ fn max_and_ultra_prompts_render_their_accent_and_glyph() {
         )
         .render(area, &mut buf);
         let prompt = &buf[(0, 0)];
-        assert_eq!(prompt.symbol(), glyph);
+        assert_eq!(prompt.symbol(), ">");
         assert_eq!(prompt.style().fg, Some(color));
         assert!(prompt.style().add_modifier.contains(Modifier::BOLD));
     }

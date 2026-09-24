@@ -370,6 +370,11 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn set_prompt_appearance(&mut self, symbol: &str, effects_enabled: bool) {
+        self.composer.set_prompt_appearance(symbol, effects_enabled);
+        self.request_redraw();
+    }
+
     /// Mirrors the effective reasoning effort into the composer so its next
     /// visible frame can play a one-shot Max/Ultra effect.
     pub(crate) fn set_active_reasoning_effort(&mut self, effort: Option<&ReasoningEffort>) {

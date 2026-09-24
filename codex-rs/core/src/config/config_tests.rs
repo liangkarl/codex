@@ -1261,6 +1261,8 @@ fn config_toml_deserializes_model_availability_nux() {
             notification_settings: TuiNotificationSettings::default(),
             animations: true,
             whimsy: true,
+            prompt_symbol: "›".to_string(),
+            prompt_effects: true,
             show_tooltips: true,
             show_server_version_notice: true,
             auto_recap: true,
@@ -1433,6 +1435,44 @@ async fn tui_show_header_defaults_and_cli_overrides() -> anyhow::Result<()> {
             config.tui_show_header, expected,
             "config: {toml}, override: {override_value:?}"
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn tui_prompt_appearance_defaults_and_cli_overrides() -> anyhow::Result<()> {
+    for (toml, overrides, expected_symbol, expected_effects) in [
+        ("", Vec::new(), "›", true),
+        (
+            "[tui]\nprompt_symbol = \"#\"\nprompt_effects = false",
+            Vec::new(),
+            "#",
+            false,
+        ),
+        (
+            "[tui]\nprompt_symbol = \"#\"\nprompt_effects = false",
+            vec![
+                (
+                    "tui.prompt_symbol".to_string(),
+                    TomlValue::String(">".to_string()),
+                ),
+                ("tui.prompt_effects".to_string(), TomlValue::Boolean(true)),
+            ],
+            ">",
+            true,
+        ),
+    ] {
+        let codex_home = TempDir::new()?;
+        std::fs::write(codex_home.path().join(CONFIG_TOML_FILE), toml)?;
+        let config = ConfigBuilder::without_managed_config_for_tests()
+            .codex_home(codex_home.path().to_path_buf())
+            .fallback_cwd(Some(codex_home.path().to_path_buf()))
+            .cli_overrides(overrides)
+            .build()
+            .await?;
+
+        assert_eq!(config.tui_prompt_symbol, expected_symbol);
+        assert_eq!(config.tui_prompt_effects, expected_effects);
     }
     Ok(())
 }
@@ -4311,6 +4351,8 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             notification_settings: TuiNotificationSettings::default(),
             animations: true,
             whimsy: true,
+            prompt_symbol: "›".to_string(),
+            prompt_effects: true,
             show_tooltips: true,
             show_server_version_notice: true,
             auto_recap: true,

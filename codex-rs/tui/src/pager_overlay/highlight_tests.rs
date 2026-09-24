@@ -84,6 +84,8 @@ fn moving_highlight_matches_full_rebuild_with_live_tail() {
                 local_image_paths: Vec::new(),
                 remote_image_urls: Vec::new(),
                 spoken: false,
+                prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+                prompt_effects: true,
             }) as Arc<dyn HistoryCell>
         })
         .collect();

@@ -102,13 +102,6 @@ impl EffortTier {
         }
     }
 
-    fn prompt_glyph(self) -> &'static str {
-        match self {
-            Self::Max => "›",
-            Self::Ultra => "»",
-        }
-    }
-
     pub(super) fn hues(self, on_light_bg: bool) -> [(u8, u8, u8); 3] {
         match (self, on_light_bg) {
             (Self::Max, false) => [(255, 178, 66), (255, 214, 120), (255, 120, 60)],
@@ -129,8 +122,9 @@ impl EffortTier {
         }
     }
 
-    pub(crate) fn prompt(self, charge: f32) -> Span<'static> {
+    pub(crate) fn prompt(self, glyph: &str, charge: f32) -> Span<'static> {
         self.prompt_for(
+            glyph,
             charge,
             default_fg(),
             default_bg(),
@@ -140,6 +134,7 @@ impl EffortTier {
 
     fn prompt_for(
         self,
+        glyph: &str,
         charge: f32,
         terminal_fg: Option<(u8, u8, u8)>,
         terminal_bg: Option<(u8, u8, u8)>,
@@ -150,7 +145,7 @@ impl EffortTier {
         if let Some(color) = color {
             style = style.fg(color);
         }
-        Span::styled(self.prompt_glyph(), style)
+        Span::styled(glyph.to_string(), style)
     }
 
     fn accent_color_for(

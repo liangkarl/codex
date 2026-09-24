@@ -5716,6 +5716,8 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }) as Arc<dyn HistoryCell>
     };
     let agent_cell = |text: &str| -> Arc<dyn HistoryCell> {
@@ -7307,6 +7309,8 @@ async fn backtrack_selection_preserves_selected_prompt_and_requests_branch() {
             text_elements,
             local_image_paths,
             remote_image_urls,
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects: true,
         }) as Arc<dyn HistoryCell>
     };
     let agent_cell = |text: &str| -> Arc<dyn HistoryCell> {
@@ -9322,6 +9326,8 @@ async fn clear_only_ui_reset_preserves_chat_session_state() {
         text_elements: Vec::new(),
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
+        prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+        prompt_effects: true,
     }) as Arc<dyn HistoryCell>];
     app.overlay = Some(Overlay::new_transcript(
         app.transcript_cells.clone(),

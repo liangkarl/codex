@@ -17,6 +17,8 @@ pub(crate) struct UserHistoryCell {
     pub local_image_paths: Vec<PathBuf>,
     pub remote_image_urls: Vec<String>,
     pub(crate) spoken: bool,
+    pub(crate) prompt_symbol: String,
+    pub(crate) prompt_effects: bool,
 }
 
 /// Remove CSI sequences and control characters, preserving tabs and newlines.
@@ -153,12 +155,13 @@ fn remote_image_display_line(style: Style, index: usize) -> Line<'static> {
     Line::from(local_image_label_text(index)).style(style)
 }
 
-impl HistoryCell for UserHistoryCell {
-    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        visible_lines(self.display_hyperlink_lines(width))
-    }
-
-    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+impl UserHistoryCell {
+    fn display_hyperlink_lines_with_appearance(
+        &self,
+        width: u16,
+        prompt_symbol: &str,
+        prompt_effects: bool,
+    ) -> Vec<HyperlinkLine> {
         let sanitized_message = sanitize_user_text((&self.message).into());
         // Speech transcripts can begin with whitespace; the marker already supplies its separator.
         let message = if self.spoken {
@@ -177,7 +180,11 @@ impl HistoryCell for UserHistoryCell {
             )
             .max(1);
 
-        let style = user_message_style();
+        let style = if prompt_effects {
+            user_message_style()
+        } else {
+            Style::default()
+        };
         let element_style = style.fg(Color::Cyan);
 
         let wrapped_remote_images = if self.remote_image_urls.is_empty() {
@@ -268,12 +275,13 @@ impl HistoryCell for UserHistoryCell {
         }
 
         if let Some(wrapped_message) = wrapped_message {
+            let prompt = format!("{prompt_symbol} ");
             lines.extend(prefix_hyperlink_lines(
                 wrapped_message,
                 if self.spoken {
-                    "› ".red().bold()
+                    prompt.red().bold()
                 } else {
-                    "› ".bold().dim()
+                    prompt.bold().dim()
                 },
                 "  ".into(),
             ));
@@ -281,6 +289,20 @@ impl HistoryCell for UserHistoryCell {
 
         lines.push(HyperlinkLine::new(Line::from("").style(style)));
         lines
+    }
+}
+
+impl HistoryCell for UserHistoryCell {
+    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        visible_lines(self.display_hyperlink_lines(width))
+    }
+
+    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.display_hyperlink_lines_with_appearance(
+            width,
+            &self.prompt_symbol,
+            self.prompt_effects,
+        )
     }
 
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
@@ -650,11 +672,44 @@ pub(crate) fn new_user_prompt(
         local_image_paths,
         remote_image_urls,
         spoken: false,
+        prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+        prompt_effects: true,
     }
+}
+
+pub(crate) fn new_user_prompt_with_appearance(
+    message: String,
+    text_elements: Vec<TextElement>,
+    local_image_paths: Vec<PathBuf>,
+    remote_image_urls: Vec<String>,
+    prompt_symbol: &str,
+    prompt_effects: bool,
+) -> UserHistoryCell {
+    let mut cell = new_user_prompt(message, text_elements, local_image_paths, remote_image_urls);
+    cell.prompt_symbol = crate::style::normalize_prompt_symbol(prompt_symbol);
+    cell.prompt_effects = prompt_effects;
+    cell
 }
 
 pub(crate) fn new_spoken_user_prompt(message: String) -> UserHistoryCell {
     let mut cell = new_user_prompt(message, Vec::new(), Vec::new(), Vec::new());
+    cell.spoken = true;
+    cell
+}
+
+pub(crate) fn new_spoken_user_prompt_with_appearance(
+    message: String,
+    prompt_symbol: &str,
+    prompt_effects: bool,
+) -> UserHistoryCell {
+    let mut cell = new_user_prompt_with_appearance(
+        message,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        prompt_symbol,
+        prompt_effects,
+    );
     cell.spoken = true;
     cell
 }

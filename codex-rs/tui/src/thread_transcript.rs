@@ -125,6 +125,8 @@ pub(crate) fn thread_items_to_transcript_cells(
                     text_elements: item.text_elements(),
                     local_image_paths: item.local_image_paths(),
                     remote_image_urls: item.image_urls(),
+                    prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+                    prompt_effects: true,
                 }));
             }
             ThreadItem::AgentMessage { text, .. } => {

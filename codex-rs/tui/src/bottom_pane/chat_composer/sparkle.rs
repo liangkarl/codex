@@ -34,6 +34,7 @@ pub(super) struct Sparkle {
     model: String,
     whimsy: bool,
     animations: bool,
+    prompt_effects: bool,
     started: Instant,
 }
 
@@ -41,6 +42,7 @@ impl Sparkle {
     fn enabled_foreground(&self) -> Option<(u8, u8, u8)> {
         if !self.whimsy
             || !self.animations
+            || !self.prompt_effects
             || !ASTRA_MODEL.is_match(&self.model)
             || effective_stdout_color_level() != StdoutColorLevel::TrueColor
         {
@@ -62,6 +64,7 @@ impl BottomPane {
             model: model.to_owned(),
             whimsy: settings.whimsy,
             animations: settings.animations,
+            prompt_effects: settings.prompt_effects,
             started,
         });
     }

@@ -146,6 +146,7 @@ impl SplitFlapTranscriptCell {
         let board_style = Style::new().bg(Color::Black).fg(Color::Gray);
         let mut glyph_index = 0;
         let mut word_is_unsettled = false;
+        let mut user_prompt_pending = self.role == "user";
         let now = self.started_at + elapsed;
         let phase_elapsed = now.saturating_duration_since(self.phase_started_at);
         let final_line = lines.iter().rposition(|line| {
@@ -169,7 +170,13 @@ impl SplitFlapTranscriptCell {
             for span in original_spans {
                 for grapheme in span.content.graphemes(/*is_extended*/ true) {
                     let mut style = span.style.patch(board_style);
-                    let text = if is_flippable(grapheme) {
+                    let is_user_prompt =
+                        user_prompt_pending && !grapheme.chars().all(char::is_whitespace);
+                    let text = if is_user_prompt {
+                        user_prompt_pending = false;
+                        style = style.fg(span.style.fg.unwrap_or(Color::Cyan));
+                        grapheme.to_string()
+                    } else if is_flippable(grapheme) {
                         let position = glyph_index;
                         glyph_index += 1;
                         let arrival = self
@@ -197,9 +204,7 @@ impl SplitFlapTranscriptCell {
                         }
                         text
                     } else {
-                        if grapheme == "›" {
-                            style = style.fg(span.style.fg.unwrap_or(Color::Cyan));
-                        } else if grapheme == "•" {
+                        if grapheme == "•" {
                             style = style.fg(Color::Magenta);
                         }
                         if grapheme.chars().all(char::is_whitespace) {

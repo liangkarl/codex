@@ -52,6 +52,8 @@ fn user_history_cell(message: &str) -> Arc<dyn HistoryCell> {
         text_elements: Vec::new(),
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
+        prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+        prompt_effects: true,
     })
 }
 

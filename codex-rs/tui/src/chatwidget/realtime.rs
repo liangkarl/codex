@@ -1515,7 +1515,11 @@ impl ChatWidget {
 
     fn realtime_transcript_history_cell(&self, role: &str, text: &str) -> Box<dyn HistoryCell> {
         if role == "user" {
-            Box::new(history_cell::new_spoken_user_prompt(text.to_string()))
+            Box::new(history_cell::new_spoken_user_prompt_with_appearance(
+                text.to_string(),
+                &self.local_settings.tui.prompt_symbol,
+                self.local_settings.tui.prompt_effects,
+            ))
         } else {
             Box::new(history_cell::AgentMarkdownCell::new_spoken(
                 text.to_string(),

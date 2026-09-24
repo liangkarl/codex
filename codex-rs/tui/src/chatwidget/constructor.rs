@@ -320,6 +320,10 @@ impl ChatWidget {
             .bottom_pane
             .set_token_activity_command_enabled(widget.has_codex_backend_auth);
         widget.refresh_status_surfaces();
+        widget.bottom_pane.set_prompt_appearance(
+            &widget.local_settings.tui.prompt_symbol,
+            widget.local_settings.tui.prompt_effects,
+        );
         widget.bottom_pane.set_astra_sparkle(
             widget.effective_collaboration_mode().model(),
             &widget.local_settings.tui,

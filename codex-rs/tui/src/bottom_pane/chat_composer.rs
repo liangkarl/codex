@@ -531,6 +531,8 @@ pub(crate) struct ChatComposer {
     effort_ignition: Option<EffortIgnition>,
     voice_strip: Option<VoiceStrip>,
     astra_sparkle: Option<sparkle::Sparkle>,
+    prompt_symbol: String,
+    prompt_effects_enabled: bool,
     effort_status_line_transition: Option<EffortStatusLineTransition>,
     effort_observed: bool,
     luna_reserve_active: bool,
@@ -701,6 +703,8 @@ impl ChatComposer {
             effort_ignition: None,
             voice_strip: None,
             astra_sparkle: None,
+            prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+            prompt_effects_enabled: true,
             effort_status_line_transition: None,
             effort_observed: false,
             luna_reserve_active: false,
@@ -751,6 +755,15 @@ impl ChatComposer {
         self.frame_requester = Some(frame_requester);
     }
 
+    pub(crate) fn set_prompt_appearance(&mut self, symbol: &str, effects_enabled: bool) {
+        self.prompt_symbol = crate::style::normalize_prompt_symbol(symbol);
+        self.prompt_effects_enabled = effects_enabled;
+        if !effects_enabled {
+            self.effort_ignition = None;
+            self.effort_status_line_transition = None;
+        }
+    }
+
     /// Records the effective reasoning tier, captures the outgoing status
     /// line, and queues the one-shot effects for a genuine Max/Ultra change
     /// after the initial baseline.
@@ -771,6 +784,7 @@ impl ChatComposer {
         if let Some(tier) = tier
             && !is_baseline
             && animations_enabled
+            && self.prompt_effects_enabled
         {
             let style = IgnitionStyle::random(self.effort_animation_style);
             self.effort_ignition = Some(EffortIgnition::new(tier, style));
@@ -4945,7 +4959,11 @@ impl ChatComposer {
                 }
             }
         }
-        let style = user_message_style();
+        let style = if self.prompt_effects_enabled {
+            user_message_style()
+        } else {
+            Style::default()
+        };
         Block::default().style(style).render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
@@ -4956,23 +4974,26 @@ impl ChatComposer {
             let prompt = if self.draft.input_enabled {
                 if self.draft.is_bash_mode {
                     Span::from("!").light_red().bold()
-                } else if self.luna_reserve_active {
-                    // Reserve keeps one arrow at every reasoning effort; only its foreground changes.
-                    "›"
+                } else if self.prompt_effects_enabled && self.luna_reserve_active {
+                    // Reserve keeps one symbol at every reasoning effort; only its foreground changes.
+                    self.prompt_symbol
+                        .clone()
                         .fg(crate::terminal_palette::best_color((246, 197, 67)))
                         .bold()
-                } else if let Some(tier) = self.effort_tier {
+                } else if self.prompt_effects_enabled
+                    && let Some(tier) = self.effort_tier
+                {
                     let charge = self
                         .effort_ignition
                         .as_ref()
                         .map(EffortIgnition::charge_alpha)
                         .unwrap_or(1.0);
-                    tier.prompt(charge)
+                    tier.prompt(&self.prompt_symbol, charge)
                 } else {
-                    "›".bold()
+                    self.prompt_symbol.clone().bold()
                 }
             } else {
-                "›".dim()
+                self.prompt_symbol.clone().dim()
             };
             buf.set_span(
                 textarea_rect.x - LIVE_PREFIX_COLS,
@@ -5033,6 +5054,7 @@ impl ChatComposer {
             }
         }
         if matches!(self.popups.active, ActivePopup::None)
+            && self.prompt_effects_enabled
             && let Some(ignition) = &self.effort_ignition
             && !ignition.is_finished()
         {
@@ -5055,7 +5077,7 @@ impl ChatComposer {
         }
         drop(state);
         self.render_voice_strip(composer_rect, buf);
-        if self.astra_sparkle.is_some() {
+        if self.prompt_effects_enabled && self.astra_sparkle.is_some() {
             self.render_sparkle(
                 composer_rect,
                 self.cursor_pos_with_textarea_right_reserve(area, textarea_right_reserve),
@@ -5222,6 +5244,29 @@ mod tests {
             );
             insta::assert_snapshot!("light_terminal_palette_composer", format!("{buffer:?}"));
         });
+    }
+
+    #[test]
+    fn prompt_appearance_supports_custom_symbol_and_disabled_effects() {
+        let (mut composer, _rx) = new_test_composer();
+        composer.set_prompt_appearance(">", /*effects_enabled*/ false);
+        let area = Rect::new(0, 0, 48, 6);
+        let mut buffer = Buffer::empty(area);
+        composer.render(area, &mut buffer);
+
+        assert_eq!(buffer[(0, 1)].symbol(), ">");
+        assert_eq!(buffer[(0, 1)].bg, ratatui::style::Color::Reset);
+
+        composer.set_prompt_appearance(">>", /*effects_enabled*/ true);
+        assert_eq!(
+            composer.prompt_symbol,
+            codex_config::types::DEFAULT_PROMPT_SYMBOL
+        );
+        composer.set_prompt_appearance(" ", /*effects_enabled*/ true);
+        assert_eq!(
+            composer.prompt_symbol,
+            codex_config::types::DEFAULT_PROMPT_SYMBOL
+        );
     }
 
     #[test]

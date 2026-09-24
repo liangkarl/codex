@@ -4246,6 +4246,16 @@
           "default": "composer",
           "description": "Where the terminal pet should anchor vertically.\n\nDefaults to `composer`, which follows the current TUI composer viewport."
         },
+        "prompt_effects": {
+          "default": true,
+          "description": "Show the composer background and model/reasoning prompt effects. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "prompt_symbol": {
+          "default": "›",
+          "description": "Symbol shown to the left of the composer input. Must be a non-whitespace grapheme occupying exactly one terminal column. Defaults to `›`.",
+          "type": "string"
+        },
         "question_esc_back": {
           "default": true,
           "description": "Escape returns from async questions to the composer, preserving the answer draft.",

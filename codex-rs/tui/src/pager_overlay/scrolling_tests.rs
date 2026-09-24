@@ -94,6 +94,8 @@ fn scrolled_test_renderables(lines: &[HyperlinkLine]) -> Vec<(&'static str, Box<
         text_elements: Vec::new(),
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
+        prompt_symbol: codex_config::types::DEFAULT_PROMPT_SYMBOL.to_string(),
+        prompt_effects: true,
     });
 
     vec![
