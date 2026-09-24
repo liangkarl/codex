@@ -39,6 +39,7 @@ use codex_config::sandbox_mode_requirement_for_permission_profile;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::AuthKeyringBackendKind;
+use codex_config::types::DiffStyle;
 use codex_config::types::History;
 use codex_config::types::McpServerConfig;
 use codex_config::types::McpServerDisabledReason;
@@ -795,6 +796,9 @@ pub struct Config {
 
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
+
+    /// Appearance of added and removed lines in TUI diffs.
+    pub tui_diff_style: DiffStyle,
 
     /// Pet id preselected by the terminal pet picker.
     pub tui_pet: Option<String>,
@@ -4419,6 +4423,7 @@ impl Config {
                 .unwrap_or(true),
             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
+            tui_diff_style: cfg.tui.as_ref().map(|t| t.diff_style).unwrap_or_default(),
             tui_pet: cfg.tui.as_ref().and_then(|t| t.pet.clone()),
             tui_pet_anchor: cfg
                 .tui

@@ -1273,6 +1273,7 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line_use_colors: true,
             terminal_title: None,
             theme: None,
+            diff_style: Default::default(),
             pet: None,
             pet_anchor: TuiPetAnchor::Composer,
             session_picker_view: None,
@@ -4289,6 +4290,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line_use_colors: true,
             terminal_title: None,
             theme: None,
+            diff_style: Default::default(),
             pet: None,
             pet_anchor: TuiPetAnchor::Composer,
             session_picker_view: None,
@@ -4520,6 +4522,23 @@ theme = "dark"
 
     assert!(err.to_string().contains("unknown field"));
     assert!(err.to_string().contains("theme"));
+}
+
+#[test]
+fn tui_diff_style_defaults_to_git_and_accepts_highlighted() {
+    let default_config =
+        toml::from_str::<ConfigToml>("[tui]").expect("default TUI config should deserialize");
+    assert_eq!(
+        default_config.tui.expect("TUI section").diff_style,
+        DiffStyle::Git
+    );
+
+    let highlighted_config = toml::from_str::<ConfigToml>("[tui]\ndiff_style = \"highlighted\"")
+        .expect("highlighted diff style should deserialize");
+    assert_eq!(
+        highlighted_config.tui.expect("TUI section").diff_style,
+        DiffStyle::Highlighted
+    );
 }
 
 #[tokio::test]

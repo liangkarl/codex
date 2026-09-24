@@ -1,15 +1,15 @@
 //! Builds the `/theme` picker dialog for the TUI.
 //!
-//! The picker lists all bundled themes plus any custom `.tmTheme` files found
-//! under `{CODEX_HOME}/themes/`.  It provides:
+//! The picker lists diff styles, bundled syntax themes, and custom `.tmTheme`
+//! files found under `{CODEX_HOME}/themes/`. It provides:
 //!
 //! - **Live preview:** the `on_selection_changed` callback swaps the runtime
 //!   syntax theme as the user navigates, giving instant visual feedback in both
 //!   the preview panel and any visible code blocks.
 //! - **Cancel-restore:** on dismiss (Esc / Ctrl+C) the `on_cancel` callback
 //!   restores the theme snapshot taken when the picker opened.
-//! - **Persist on confirm:** the `AppEvent::SyntaxThemeSelected` action persists
-//!   `[tui] theme = "..."` to `config.toml` via `ConfigEditsBuilder`.
+//! - **Persist on confirm:** selection saves `[tui] theme` or `[tui] diff_style`
+//!   to `config.toml` via `ConfigEditsBuilder`.
 //!
 //! Two preview renderables adapt to terminal width:
 //!
@@ -30,12 +30,15 @@ use crate::bottom_pane::popup_content_width;
 use crate::bottom_pane::side_by_side_layout_widths;
 use crate::diff_render::DiffLineType;
 use crate::diff_render::current_diff_render_style_context;
+use crate::diff_render::current_diff_style;
 use crate::diff_render::line_number_width;
 use crate::diff_render::push_wrapped_diff_line_with_style_context;
 use crate::diff_render::push_wrapped_diff_line_with_syntax_and_style_context;
+use crate::diff_render::set_diff_style;
 use crate::render::highlight;
 use crate::render::renderable::Renderable;
 use crate::status::format_directory_display;
+use codex_config::types::DiffStyle;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
@@ -135,7 +138,7 @@ const WIDE_PREVIEW_LEFT_INSET: u16 = 2;
 /// Minimum frame padding used for vertically centered wide preview.
 const PREVIEW_FRAME_PADDING: u16 = 1;
 
-const PREVIEW_FALLBACK_SUBTITLE: &str = "Move up/down to live preview themes";
+const PREVIEW_FALLBACK_SUBTITLE: &str = "Move up/down to preview themes or diffs";
 
 /// Side-by-side preview: syntax-highlighted Rust diff snippet, vertically
 /// centered with a 2-column left inset.  Fills the entire side panel height.
@@ -176,12 +179,16 @@ fn render_preview(
     if preview_rows.is_empty() {
         return;
     }
-    let preview_code = preview_rows
-        .iter()
-        .map(|row| row.code)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let syntax_lines = highlight::highlight_code_to_styled_spans(&preview_code, "rust");
+    let syntax_lines = (current_diff_style() == DiffStyle::Highlighted)
+        .then(|| {
+            let preview_code = preview_rows
+                .iter()
+                .map(|row| row.code)
+                .collect::<Vec<_>>()
+                .join("\n");
+            highlight::highlight_code_to_styled_spans(&preview_code, "rust")
+        })
+        .flatten();
 
     let max_line_no = preview_rows
         .iter()
@@ -301,8 +308,8 @@ fn theme_picker_subtitle(codex_home: Option<&Path>, terminal_width: Option<u16>)
 
 /// Builds [`SelectionViewParams`] for the `/theme` picker dialog.
 ///
-/// Lists all bundled themes plus custom `.tmTheme` files, with live preview
-/// on cursor movement and cancel-restore.
+/// Lists diff styles, bundled themes, and custom `.tmTheme` files, with live
+/// preview on cursor movement and cancel-restore.
 ///
 /// `current_name` should be the value of `Config::tui_theme` (the persisted
 /// preference).  When it names a theme that is currently available the picker
@@ -316,6 +323,7 @@ pub(crate) fn build_theme_picker_params(
 ) -> SelectionViewParams {
     // Snapshot the current theme so we can restore on cancel.
     let original_theme = highlight::current_syntax_theme();
+    let original_diff_style = current_diff_style();
 
     let entries = highlight::list_available_themes(codex_home);
     let codex_home_owned = codex_home.map(Path::to_path_buf);
@@ -334,46 +342,68 @@ pub(crate) fn build_theme_picker_params(
     // Track the index of the current theme so we can preselect it.
     let mut initial_idx = None;
 
-    let items: Vec<SelectionItem> = entries
-        .iter()
-        .enumerate()
-        .map(|(idx, entry)| {
-            let display_name = if entry.is_custom {
-                format!("{} (custom)", entry.name)
-            } else {
-                entry.name.clone()
+    let diff_styles = [DiffStyle::Git, DiffStyle::Highlighted];
+    let mut items: Vec<SelectionItem> = diff_styles
+        .into_iter()
+        .map(|style| {
+            let name = match style {
+                DiffStyle::Git => "Diff: Git",
+                DiffStyle::Highlighted => "Diff: Highlighted",
             };
-            let is_current = entry.name == effective_name;
-            if is_current {
-                initial_idx = Some(idx);
-            }
-            let name_for_action = entry.name.clone();
             SelectionItem {
-                name: display_name,
-                is_current,
+                name: name.to_string(),
+                is_current: style == original_diff_style,
                 dismiss_on_select: true,
-                search_value: Some(entry.name.clone()),
+                search_value: Some(name.to_string()),
                 actions: vec![Box::new(move |tx| {
-                    tx.send(AppEvent::SyntaxThemeSelected {
-                        name: name_for_action.clone(),
-                    });
+                    tx.send(AppEvent::DiffStyleSelected { style });
                 })],
                 ..Default::default()
             }
         })
         .collect();
+    items.extend(entries.iter().enumerate().map(|(idx, entry)| {
+        let display_name = if entry.is_custom {
+            format!("{} (custom)", entry.name)
+        } else {
+            entry.name.clone()
+        };
+        let is_current = entry.name == effective_name;
+        if is_current {
+            initial_idx = Some(idx + diff_styles.len());
+        }
+        let name_for_action = entry.name.clone();
+        SelectionItem {
+            name: display_name,
+            is_current,
+            dismiss_on_select: true,
+            search_value: Some(entry.name.clone()),
+            actions: vec![Box::new(move |tx| {
+                tx.send(AppEvent::SyntaxThemeSelected {
+                    name: name_for_action.clone(),
+                });
+            })],
+            ..Default::default()
+        }
+    }));
 
     // Derive preview targets from the final `items` list (not from `entries`)
     // so preview ordering stays aligned if item construction/sorting changes.
     let preview_theme_names: Vec<Option<String>> =
         items.iter().map(|item| item.search_value.clone()).collect();
     let preview_home = codex_home_owned.clone();
+    let preview_original_theme = original_theme.clone();
     let on_selection_changed = Some(Box::new(
         move |idx: usize, tx: &crate::app_event_sender::AppEventSender| {
-            if let Some(Some(name)) = preview_theme_names.get(idx)
+            if let Some(style) = diff_styles.get(idx) {
+                highlight::set_syntax_theme(preview_original_theme.clone());
+                set_diff_style(*style);
+                tx.send(AppEvent::SyntaxThemePreviewed);
+            } else if let Some(Some(name)) = preview_theme_names.get(idx)
                 && let Some(theme) = highlight::resolve_theme_by_name(name, preview_home.as_deref())
             {
                 highlight::set_syntax_theme(theme);
+                set_diff_style(DiffStyle::Highlighted);
                 tx.send(AppEvent::SyntaxThemePreviewed);
             }
         },
@@ -384,11 +414,12 @@ pub(crate) fn build_theme_picker_params(
     let on_cancel = Some(
         Box::new(move |tx: &crate::app_event_sender::AppEventSender| {
             highlight::set_syntax_theme(original_theme.clone());
+            set_diff_style(original_diff_style);
             tx.send(AppEvent::SyntaxThemePreviewed);
         }) as Box<dyn Fn(&crate::app_event_sender::AppEventSender) + Send + Sync>,
     );
     SelectionViewParams {
-        title: Some("Select Syntax Theme".to_string()),
+        title: Some("Select Theme or Diff Style".to_string()),
         subtitle: Some(theme_picker_subtitle(
             codex_home_owned.as_deref(),
             terminal_width,
@@ -396,7 +427,7 @@ pub(crate) fn build_theme_picker_params(
         footer_hint: Some(standard_popup_hint_line()),
         items,
         is_searchable: true,
-        search_placeholder: Some("Type to filter themes...".to_string()),
+        search_placeholder: Some("Type to filter themes or diff styles...".to_string()),
         initial_selected_idx: initial_idx,
         side_content: Box::new(ThemePreviewWideRenderable),
         side_content_width: SideContentWidth::Half,
@@ -413,7 +444,7 @@ pub(crate) fn build_theme_picker_params(
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use ratatui::style::Modifier;
+    use ratatui::style::Color;
 
     fn render_buffer(renderable: &dyn Renderable, width: u16, height: u16) -> Buffer {
         let area = Rect::new(0, 0, width, height);
@@ -440,12 +471,16 @@ mod tests {
             .collect()
     }
 
-    fn first_non_space_style_after_marker(buf: &Buffer, row: u16, width: u16) -> Option<Modifier> {
+    fn first_non_space_style_after_marker(
+        buf: &Buffer,
+        row: u16,
+        width: u16,
+    ) -> Option<ratatui::style::Style> {
         let marker_col = (0..width)
             .find(|&col| buf[(col, row)].symbol() == "-" || buf[(col, row)].symbol() == "+")?;
         for col in marker_col + 1..width {
             if buf[(col, row)].symbol() != " " {
-                return Some(buf[(col, row)].style().add_modifier);
+                return Some(buf[(col, row)].style());
             }
         }
         None
@@ -496,6 +531,18 @@ mod tests {
             params.items.iter().all(|item| item.search_value.is_some()),
             "theme picker preview mapping relies on item search_value to stay aligned with final item order"
         );
+        assert_eq!(params.items[0].name, "Diff: Git");
+        assert_eq!(params.items[1].name, "Diff: Highlighted");
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let tx = crate::app_event_sender::AppEventSender::new(tx);
+        (params.items[1].actions[0])(&tx);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AppEvent::DiffStyleSelected {
+                style: DiffStyle::Highlighted
+            })
+        ));
     }
 
     #[test]
@@ -579,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn deleted_preview_code_uses_dim_overlay_like_real_diff_renderer() {
+    fn deleted_preview_code_uses_git_diff_colors() {
         let width = 80;
         let height = 6;
         let buf = render_buffer(&ThemePreviewNarrowRenderable, width, height);
@@ -589,12 +636,10 @@ mod tests {
             .enumerate()
             .find_map(|(row, line)| (preview_line_marker(line) == Some('-')).then_some(row as u16))
             .expect("expected a deleted preview row");
-        let modifiers = first_non_space_style_after_marker(&buf, deleted_row, width)
+        let style = first_non_space_style_after_marker(&buf, deleted_row, width)
             .expect("expected code text after diff marker");
-        assert!(
-            modifiers.contains(Modifier::DIM),
-            "expected deleted preview code to be dimmed"
-        );
+        assert_eq!(style.fg, Some(Color::Red));
+        assert!(matches!(style.bg, None | Some(Color::Reset)));
     }
 
     #[test]

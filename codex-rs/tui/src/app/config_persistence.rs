@@ -406,6 +406,7 @@ impl App {
             .await?;
         self.apply_runtime_policy_overrides(&mut config, RuntimePolicyOverrideScope::All);
         self.local_settings = crate::local_settings::LocalSettings::from(&config);
+        crate::diff_render::set_diff_style(self.local_settings.tui.diff_style);
         self.refresh_server_version_overview_notice(CODEX_CLI_VERSION);
         // Other preferences have runtime caches and are adopted when the widget is replaced.
         self.chat_widget

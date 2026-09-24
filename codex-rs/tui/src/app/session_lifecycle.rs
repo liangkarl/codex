@@ -950,6 +950,7 @@ impl App {
                     }
                 }
                 self.local_settings = crate::local_settings::LocalSettings::from(&config);
+                crate::diff_render::set_diff_style(self.local_settings.tui.diff_style);
                 self.refresh_server_version_overview_notice(CODEX_CLI_VERSION);
                 self.config = config;
 

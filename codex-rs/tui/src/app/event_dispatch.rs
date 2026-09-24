@@ -3143,16 +3143,40 @@ impl App {
                         ) {
                             crate::render::highlight::set_syntax_theme(theme);
                         }
+                        crate::diff_render::set_diff_style(self.local_settings.tui.diff_style);
                         self.sync_tui_theme_selection(name);
                         self.refresh_status_line();
                         tui.frame_requester().schedule_frame();
                     }
                     Err(err) => {
                         self.restore_runtime_theme_from_config();
+                        crate::diff_render::set_diff_style(self.local_settings.tui.diff_style);
                         self.refresh_status_line();
                         tracing::error!(error = %err, "failed to persist theme selection");
                         self.chat_widget
                             .add_error_message(format!("Failed to save theme: {err}"));
+                    }
+                }
+            }
+            AppEvent::DiffStyleSelected { style } => {
+                let edit = crate::legacy_core::config::edit::diff_style_edit(style);
+                let apply_result = ConfigEditsBuilder::for_config_path(self.local_settings.user_config_path.as_path())
+                    .with_edits([edit])
+                    .apply()
+                    .await;
+                match apply_result {
+                    Ok(()) => {
+                        self.local_settings.tui.diff_style = style;
+                        crate::diff_render::set_diff_style(style);
+                        self.restore_runtime_theme_from_config();
+                        tui.frame_requester().schedule_frame();
+                    }
+                    Err(err) => {
+                        crate::diff_render::set_diff_style(self.local_settings.tui.diff_style);
+                        self.restore_runtime_theme_from_config();
+                        tracing::error!(error = %err, "failed to persist diff style selection");
+                        self.chat_widget
+                            .add_error_message(format!("Failed to save diff style: {err}"));
                     }
                 }
             }

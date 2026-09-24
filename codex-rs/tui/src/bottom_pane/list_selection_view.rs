@@ -1650,7 +1650,7 @@ mod tests {
         let view = new_view(params, tx);
 
         let rendered = render_lines_in_area(&view, /*width*/ 94, /*height*/ 35);
-        assert!(rendered.contains("Move up/down to live preview themes"));
+        assert!(rendered.contains("Move up/down to preview themes or diffs"));
     }
 
     #[test]

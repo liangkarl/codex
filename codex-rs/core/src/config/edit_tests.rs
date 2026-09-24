@@ -1,5 +1,6 @@
 use super::*;
 use codex_config::types::AppToolApproval;
+use codex_config::types::DiffStyle;
 use codex_config::types::McpServerOAuthConfig;
 use codex_config::types::McpServerToolConfig;
 use codex_config::types::McpServerTransportConfig;
@@ -291,6 +292,21 @@ fn session_picker_view_edit_writes_root_tui_setting() {
     let expected = r#"[tui]
 session_picker_view = "dense"
 "#;
+    assert_eq!(contents, expected);
+}
+
+#[test]
+fn diff_style_edit_writes_root_tui_setting() {
+    let tmp = tempdir().expect("tmpdir");
+    let codex_home = tmp.path();
+
+    ConfigEditsBuilder::new(codex_home)
+        .with_edits([diff_style_edit(DiffStyle::Highlighted)])
+        .apply_blocking()
+        .expect("persist");
+
+    let contents = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
+    let expected = "[tui]\ndiff_style = \"highlighted\"\n";
     assert_eq!(contents, expected);
 }
 

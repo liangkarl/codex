@@ -58,6 +58,7 @@ use crate::experimental_features::FeatureWriteResult;
 use crate::goal_files::GoalDraft;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
+use codex_config::types::DiffStyle;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
 use codex_protocol::config_types::CollaborationModeMask;
@@ -1483,6 +1484,11 @@ pub(crate) enum AppEvent {
     /// Apply a user-confirmed syntax theme selection.
     SyntaxThemeSelected {
         name: String,
+    },
+
+    /// Apply a user-confirmed diff appearance selection.
+    DiffStyleSelected {
+        style: DiffStyle,
     },
 
     /// Runtime syntax theme preview changed; refresh theme-derived UI colors.

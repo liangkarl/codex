@@ -93,6 +93,18 @@ pub fn syntax_theme_edit(name: &str) -> ConfigEdit {
     }
 }
 
+/// Produces a config edit that sets `[tui].diff_style`.
+pub fn diff_style_edit(style: codex_config::types::DiffStyle) -> ConfigEdit {
+    let name = match style {
+        codex_config::types::DiffStyle::Git => "git",
+        codex_config::types::DiffStyle::Highlighted => "highlighted",
+    };
+    ConfigEdit::SetPath {
+        segments: vec!["tui".to_string(), "diff_style".to_string()],
+        value: value(name.to_string()),
+    }
+}
+
 /// Produces a config edit that sets [tui].pet = "<name>".
 pub fn tui_pet_edit(name: &str) -> ConfigEdit {
     ConfigEdit::SetPath {

@@ -1,11 +1,11 @@
-//! Renders unified diffs with line numbers, gutter signs, and optional syntax
-//! highlighting.
+//! Renders unified diffs with line numbers, gutter signs, and selectable styling.
 //!
 //! Each `FileChange` variant (Add / Delete / Update) is rendered as a block of
 //! diff lines, each prefixed by a right-aligned line number, a gutter sign
 //! (`+` / `-` / ` `), and the content text.  When a recognized file extension
-//! is present, the content text is syntax-highlighted using
-//! [`crate::render::highlight`].
+//! is present, the highlighted diff style syntax-colors content text using
+//! [`crate::render::highlight`]. The default Git style uses red and green
+//! foreground colors without syntax colors or tinted backgrounds.
 //!
 //! **Theme-aware styling:** diff backgrounds adapt to the terminal's
 //! background lightness via [`DiffTheme`].  Dark terminals get muted tints
@@ -44,7 +44,10 @@ use ratatui::widgets::Paragraph;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 
+use codex_config::types::DiffStyle;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use unicode_width::UnicodeWidthChar;
 
@@ -52,6 +55,20 @@ use unicode_width::UnicodeWidthChar;
 const TAB_REPLACEMENT: &str = "    ";
 /// Display width of a tab character in columns.
 const TAB_WIDTH: usize = TAB_REPLACEMENT.len();
+
+static HIGHLIGHTED_DIFF_STYLE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn set_diff_style(style: DiffStyle) {
+    HIGHLIGHTED_DIFF_STYLE.store(style == DiffStyle::Highlighted, Ordering::Release);
+}
+
+pub(crate) fn current_diff_style() -> DiffStyle {
+    if HIGHLIGHTED_DIFF_STYLE.load(Ordering::Acquire) {
+        DiffStyle::Highlighted
+    } else {
+        DiffStyle::Git
+    }
+}
 
 // -- Diff background palette --------------------------------------------------
 //
@@ -189,6 +206,7 @@ struct ResolvedDiffBackgrounds {
 /// pass and reuse it across all line calls.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DiffRenderStyleContext {
+    diff_style: DiffStyle,
     theme: DiffTheme,
     color_level: DiffColorLevel,
     diff_backgrounds: ResolvedDiffBackgrounds,
@@ -219,6 +237,7 @@ pub(crate) fn current_diff_render_style_context() -> DiffRenderStyleContext {
     let color_level = diff_color_level();
     let diff_backgrounds = resolve_diff_backgrounds(theme, color_level);
     DiffRenderStyleContext {
+        diff_style: current_diff_style(),
         theme,
         color_level,
         diff_backgrounds,
@@ -309,13 +328,25 @@ impl DiffSummary {
 impl Renderable for FileChange {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         let mut lines = vec![];
-        render_change(self, &mut lines, area.width as usize, /*lang*/ None);
+        render_change(
+            self,
+            &mut lines,
+            area.width as usize,
+            /*lang*/ None,
+            current_diff_render_style_context(),
+        );
         Paragraph::new(lines).render(area, buf);
     }
 
     fn desired_height(&self, width: u16) -> u16 {
         let mut lines = vec![];
-        render_change(self, &mut lines, width as usize, /*lang*/ None);
+        render_change(
+            self,
+            &mut lines,
+            width as usize,
+            /*lang*/ None,
+            current_diff_render_style_context(),
+        );
         lines.len() as u16
     }
 }
@@ -354,7 +385,7 @@ pub(crate) fn create_diff_summary(
     wrap_cols: usize,
 ) -> Vec<RtLine<'static>> {
     let rows = collect_rows(changes);
-    render_changes_block(rows, wrap_cols, cwd)
+    render_changes_block(rows, wrap_cols, cwd, current_diff_render_style_context())
 }
 
 // Shared row for per-file presentation
@@ -407,7 +438,12 @@ fn render_line_count_summary(added: usize, removed: usize) -> Vec<RtSpan<'static
     spans
 }
 
-fn render_changes_block(rows: Vec<Row<'_>>, wrap_cols: usize, cwd: &Path) -> Vec<RtLine<'static>> {
+fn render_changes_block(
+    rows: Vec<Row<'_>>,
+    wrap_cols: usize,
+    cwd: &Path,
+    style_context: DiffRenderStyleContext,
+) -> Vec<RtLine<'static>> {
     let mut out: Vec<RtLine<'static>> = Vec::new();
 
     let render_path = |row: &Row<'_>| -> Vec<RtSpan<'static>> {
@@ -466,7 +502,13 @@ fn render_changes_block(rows: Vec<Row<'_>>, wrap_cols: usize, cwd: &Path) -> Vec
         let mut lines = vec![];
         let prefix = "    ";
         let content_width = wrap_cols.saturating_sub(prefix.len());
-        render_change(r.change, &mut lines, content_width, lang.as_deref());
+        render_change(
+            r.change,
+            &mut lines,
+            content_width,
+            lang.as_deref(),
+            style_context,
+        );
         out.extend(prefix_lines(lines, prefix.into(), prefix.into()));
     }
 
@@ -486,8 +528,12 @@ fn render_change(
     out: &mut Vec<RtLine<'static>>,
     width: usize,
     lang: Option<&str>,
+    style_context: DiffRenderStyleContext,
 ) {
-    let style_context = current_diff_render_style_context();
+    let lang = match style_context.diff_style {
+        DiffStyle::Git => None,
+        DiffStyle::Highlighted => lang,
+    };
     match change {
         FileChange::Add { content } => {
             // Pre-highlight the entire file content as a whole.
@@ -496,28 +542,24 @@ fn render_change(
             for (i, raw) in content.lines().enumerate() {
                 let syn = syntax_lines.as_ref().and_then(|sl| sl.get(i));
                 if let Some(spans) = syn {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                    out.extend(push_wrapped_diff_line_for_style(
                         i + 1,
                         DiffLineType::Insert,
                         raw,
                         width,
                         line_number_width,
                         Some(spans),
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
+                        style_context,
                     ));
                 } else {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                    out.extend(push_wrapped_diff_line_for_style(
                         i + 1,
                         DiffLineType::Insert,
                         raw,
                         width,
                         line_number_width,
                         /*syntax_spans*/ None,
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
+                        style_context,
                     ));
                 }
             }
@@ -528,28 +570,24 @@ fn render_change(
             for (i, raw) in content.lines().enumerate() {
                 let syn = syntax_lines.as_ref().and_then(|sl| sl.get(i));
                 if let Some(spans) = syn {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                    out.extend(push_wrapped_diff_line_for_style(
                         i + 1,
                         DiffLineType::Delete,
                         raw,
                         width,
                         line_number_width,
                         Some(spans),
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
+                        style_context,
                     ));
                 } else {
-                    out.extend(push_wrapped_diff_line_inner_with_theme_and_color_level(
+                    out.extend(push_wrapped_diff_line_for_style(
                         i + 1,
                         DiffLineType::Delete,
                         raw,
                         width,
                         line_number_width,
                         /*syntax_spans*/ None,
-                        style_context.theme,
-                        style_context.color_level,
-                        style_context.diff_backgrounds,
+                        style_context,
                     ));
                 }
             }
@@ -640,99 +678,75 @@ fn render_change(
                             diffy::Line::Insert(text) => {
                                 let s = text.trim_end_matches('\n');
                                 if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Insert,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        new_ln,
+                                        DiffLineType::Insert,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        Some(syn),
+                                        style_context,
+                                    ));
                                 } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Insert,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        new_ln,
+                                        DiffLineType::Insert,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        /*syntax_spans*/ None,
+                                        style_context,
+                                    ));
                                 }
                                 new_ln += 1;
                             }
                             diffy::Line::Delete(text) => {
                                 let s = text.trim_end_matches('\n');
                                 if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            old_ln,
-                                            DiffLineType::Delete,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        old_ln,
+                                        DiffLineType::Delete,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        Some(syn),
+                                        style_context,
+                                    ));
                                 } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            old_ln,
-                                            DiffLineType::Delete,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        old_ln,
+                                        DiffLineType::Delete,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        /*syntax_spans*/ None,
+                                        style_context,
+                                    ));
                                 }
                                 old_ln += 1;
                             }
                             diffy::Line::Context(text) => {
                                 let s = text.trim_end_matches('\n');
                                 if let Some(syn) = syntax_spans {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Context,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            Some(syn),
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        new_ln,
+                                        DiffLineType::Context,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        Some(syn),
+                                        style_context,
+                                    ));
                                 } else {
-                                    out.extend(
-                                        push_wrapped_diff_line_inner_with_theme_and_color_level(
-                                            new_ln,
-                                            DiffLineType::Context,
-                                            s,
-                                            width,
-                                            line_number_width,
-                                            /*syntax_spans*/ None,
-                                            style_context.theme,
-                                            style_context.color_level,
-                                            style_context.diff_backgrounds,
-                                        ),
-                                    );
+                                    out.extend(push_wrapped_diff_line_for_style(
+                                        new_ln,
+                                        DiffLineType::Context,
+                                        s,
+                                        width,
+                                        line_number_width,
+                                        /*syntax_spans*/ None,
+                                        style_context,
+                                    ));
                                 }
                                 old_ln += 1;
                                 new_ln += 1;
@@ -802,16 +816,14 @@ pub(crate) fn push_wrapped_diff_line_with_style_context(
     line_number_width: usize,
     style_context: DiffRenderStyleContext,
 ) -> Vec<RtLine<'static>> {
-    push_wrapped_diff_line_inner_with_theme_and_color_level(
+    push_wrapped_diff_line_for_style(
         line_number,
         kind,
         text,
         width,
         line_number_width,
         /*syntax_spans*/ None,
-        style_context.theme,
-        style_context.color_level,
-        style_context.diff_backgrounds,
+        style_context,
     )
 }
 
@@ -831,13 +843,46 @@ pub(crate) fn push_wrapped_diff_line_with_syntax_and_style_context(
     syntax_spans: &[RtSpan<'static>],
     style_context: DiffRenderStyleContext,
 ) -> Vec<RtLine<'static>> {
-    push_wrapped_diff_line_inner_with_theme_and_color_level(
+    push_wrapped_diff_line_for_style(
         line_number,
         kind,
         text,
         width,
         line_number_width,
         Some(syntax_spans),
+        style_context,
+    )
+}
+
+fn push_wrapped_diff_line_for_style(
+    line_number: usize,
+    kind: DiffLineType,
+    text: &str,
+    width: usize,
+    line_number_width: usize,
+    syntax_spans: Option<&[RtSpan<'static>]>,
+    style_context: DiffRenderStyleContext,
+) -> Vec<RtLine<'static>> {
+    if style_context.diff_style == DiffStyle::Git {
+        return push_wrapped_diff_line_inner_with_theme_and_color_level(
+            line_number,
+            kind,
+            text,
+            width,
+            line_number_width,
+            None,
+            DiffTheme::Dark,
+            DiffColorLevel::Ansi16,
+            ResolvedDiffBackgrounds::default(),
+        );
+    }
+    push_wrapped_diff_line_inner_with_theme_and_color_level(
+        line_number,
+        kind,
+        text,
+        width,
+        line_number_width,
+        syntax_spans,
         style_context.theme,
         style_context.color_level,
         style_context.diff_backgrounds,
@@ -1368,8 +1413,58 @@ mod tests {
         assert_eq!(del_sign.fg, Some(Color::Red));
         assert_eq!(del_sign.bg, None);
     }
+
+    #[test]
+    fn git_diff_style_colors_changed_text_without_background_or_syntax() {
+        let syntax = vec![RtSpan::styled(
+            "let value = 1;",
+            Style::default().fg(Color::Blue),
+        )];
+        let backgrounds = fallback_diff_backgrounds(DiffTheme::Light, DiffColorLevel::TrueColor);
+        let style_context = DiffRenderStyleContext {
+            diff_style: DiffStyle::Git,
+            theme: DiffTheme::Light,
+            color_level: DiffColorLevel::TrueColor,
+            diff_backgrounds: backgrounds,
+        };
+        for (kind, expected_fg) in [
+            (DiffLineType::Insert, Some(Color::Green)),
+            (DiffLineType::Delete, Some(Color::Red)),
+            (DiffLineType::Context, None),
+        ] {
+            let lines = push_wrapped_diff_line_for_style(
+                1,
+                kind,
+                "let value = 1;",
+                80,
+                1,
+                Some(&syntax),
+                style_context,
+            );
+            assert_eq!(lines.len(), 1);
+            assert_eq!(lines[0].style.bg, None);
+            assert_eq!(lines[0].spans[1].style.fg, expected_fg);
+            assert_eq!(lines[0].spans[2].style.fg, expected_fg);
+            assert!(lines[0].spans.iter().all(|span| span.style.bg.is_none()));
+        }
+    }
+
     fn diff_summary_for_tests(changes: &HashMap<PathBuf, FileChange>) -> Vec<RtLine<'static>> {
         create_diff_summary(changes, &PathBuf::from("/"), /*wrap_cols*/ 80)
+    }
+
+    fn highlighted_diff_summary(
+        changes: &HashMap<PathBuf, FileChange>,
+        wrap_cols: usize,
+    ) -> Vec<RtLine<'static>> {
+        let mut style_context = current_diff_render_style_context();
+        style_context.diff_style = DiffStyle::Highlighted;
+        render_changes_block(
+            collect_rows(changes),
+            wrap_cols,
+            Path::new("/"),
+            style_context,
+        )
     }
 
     fn snapshot_lines(name: &str, lines: Vec<RtLine<'static>>, width: u16, height: u16) {
@@ -2215,7 +2310,7 @@ mod tests {
             },
         );
 
-        let lines = create_diff_summary(&changes, &PathBuf::from("/"), /*wrap_cols*/ 80);
+        let lines = highlighted_diff_summary(&changes, /*wrap_cols*/ 80);
         let has_rgb = lines.iter().any(|line| {
             line.spans
                 .iter()
@@ -2246,7 +2341,7 @@ mod tests {
                 },
             );
 
-            let lines = create_diff_summary(&changes, &PathBuf::from("/"), /*wrap_cols*/ 80);
+            let lines = highlighted_diff_summary(&changes, /*wrap_cols*/ 80);
             let rgb_tokens = lines
                 .iter()
                 .flat_map(|line| &line.spans)
@@ -2292,7 +2387,7 @@ mod tests {
             },
         );
 
-        let lines = create_diff_summary(&changes, &PathBuf::from("/"), /*wrap_cols*/ 80);
+        let lines = highlighted_diff_summary(&changes, /*wrap_cols*/ 80);
         let has_rgb = lines.iter().any(|line| {
             line.spans
                 .iter()
@@ -2507,7 +2602,7 @@ mod tests {
             },
         );
 
-        let lines = create_diff_summary(&changes, &PathBuf::from("/"), /*wrap_cols*/ 80);
+        let lines = highlighted_diff_summary(&changes, /*wrap_cols*/ 80);
         let has_rgb = lines.iter().any(|line| {
             line.spans
                 .iter()
@@ -2546,7 +2641,7 @@ mod tests {
             .map(|span| span.style)
             .expect("expected highlighted span for second multiline string line");
 
-        let lines = create_diff_summary(&changes, &PathBuf::from("/"), /*wrap_cols*/ 120);
+        let lines = highlighted_diff_summary(&changes, /*wrap_cols*/ 120);
         let actual_style = lines
             .iter()
             .flat_map(|line| line.spans.iter())
