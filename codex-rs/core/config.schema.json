@@ -4000,6 +4000,11 @@
           "description": "Generate automatic conversation recaps when the terminal is unfocused. Defaults to `true`. Disabling this leaves `/recap` available on demand.",
           "type": "boolean"
         },
+        "composer_bottom_aligned": {
+          "default": false,
+          "description": "Keep the composer viewport against the bottom edge of the terminal. Defaults to `false`.",
+          "type": "boolean"
+        },
         "diff_style": {
           "allOf": [
             {

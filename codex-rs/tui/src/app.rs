@@ -1016,6 +1016,7 @@ impl App {
     }
 
     fn render_chat_widget_frame(&mut self, tui: &mut tui::Tui, screen_size: Size) -> Result<Rect> {
+        tui.set_composer_bottom_aligned(self.local_settings.tui.composer_bottom_aligned);
         self.sync_thread_title_progress();
         let dashboard_visible = self
             .chat_widget

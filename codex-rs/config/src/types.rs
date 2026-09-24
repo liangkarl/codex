@@ -809,6 +809,11 @@ pub struct Tui {
     #[serde(default)]
     pub raw_output_mode: bool,
 
+    /// Keep the composer viewport against the bottom edge of the terminal.
+    /// Defaults to `false`.
+    #[serde(default)]
+    pub composer_bottom_aligned: bool,
+
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
     /// - `auto` (default): Use alternate screen.

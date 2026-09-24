@@ -150,6 +150,8 @@ impl StartupDraft {
 
     /// Apply the loaded editing preferences without enabling startup actions or submission.
     pub(crate) fn apply_config(&mut self, config: &Config) {
+        self.tui
+            .set_composer_bottom_aligned(config.tui_composer_bottom_aligned);
         self.pump.apply_config(config);
     }
 

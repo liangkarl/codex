@@ -223,6 +223,27 @@ mod tests {
             Ok(Ok(()))
         ));
     }
+
+    #[tokio::test]
+    async fn bottom_aligned_composer_tracks_terminal_bottom_as_height_changes() {
+        let mut tui = crate::tui::test_support::make_test_tui().expect("test tui");
+        let screen_size = tui.terminal.last_known_screen_size;
+        tui.draw_with_resize_reflow(/*height*/ 3, screen_size, |_| {})
+            .expect("draw default composer");
+        assert_eq!(tui.terminal.viewport_area.y, 0);
+        tui.set_composer_bottom_aligned(true);
+
+        for height in [3, 5, 2] {
+            tui.draw_with_resize_reflow(height, screen_size, |_| {})
+                .expect("draw bottom-aligned composer");
+            assert_eq!(
+                tui.terminal.viewport_area.bottom(),
+                screen_size.height,
+                "composer with height {height} should stay at the bottom"
+            );
+            assert_eq!(tui.terminal.viewport_area.height, height);
+        }
+    }
 }
 
 pub fn set_modes() -> Result<()> {
@@ -605,6 +626,7 @@ pub struct Tui {
     scrollback: ScrollbackStrategy,
     // When false, enter_alt_screen() becomes a no-op.
     alt_screen_enabled: bool,
+    composer_bottom_aligned: bool,
     // Keeps unmanaged process stderr writes out of the inline viewport.
     _stderr_guard: terminal_stderr::TerminalStderrGuard,
 }
@@ -666,6 +688,7 @@ impl Tui {
             notification_condition: NotificationCondition::default(),
             scrollback,
             alt_screen_enabled: true,
+            composer_bottom_aligned: false,
             _stderr_guard: stderr_guard,
         }
     }
@@ -673,6 +696,10 @@ impl Tui {
     /// Set whether alternate screen is enabled. When false, enter_alt_screen() becomes a no-op.
     pub fn set_alt_screen_enabled(&mut self, enabled: bool) {
         self.alt_screen_enabled = enabled;
+    }
+
+    pub(crate) fn set_composer_bottom_aligned(&mut self, enabled: bool) {
+        self.composer_bottom_aligned = enabled;
     }
 
     pub fn set_notification_settings(
@@ -923,6 +950,7 @@ impl Tui {
         height: u16,
         screen_size: Size,
         scrollback: ScrollbackStrategy,
+        composer_bottom_aligned: bool,
     ) -> Result<bool> {
         let terminal_height_shrank = screen_size.height < terminal.last_known_screen_size.height;
         let terminal_height_grew = screen_size.height > terminal.last_known_screen_size.height;
@@ -935,7 +963,18 @@ impl Tui {
         area.width = screen_size.width;
         let mut needs_full_repaint = false;
 
-        if area.bottom() > screen_size.height {
+        if composer_bottom_aligned {
+            area.y = screen_size.height.saturating_sub(area.height);
+            if previous_area.height > 0 && area.y < previous_area.y && !terminal_height_shrank {
+                // Make room above the old composer so expanding input does not erase history.
+                scrollback.grow_viewport(
+                    terminal,
+                    previous_area.top(),
+                    screen_size,
+                    previous_area.y - area.y,
+                )?;
+            }
+        } else if area.bottom() > screen_size.height {
             let scroll_by = area.bottom() - screen_size.height;
             if !terminal_height_shrank {
                 scrollback.grow_viewport(terminal, area.top(), screen_size, scroll_by)?;
@@ -1131,6 +1170,7 @@ impl Tui {
         let mut prepared_resume = self
             .suspend_context
             .prepare_resume_action(&mut self.alt_saved_viewport);
+        let composer_bottom_aligned = self.composer_bottom_aligned;
 
         ensure_virtual_terminal_processing()?;
 
@@ -1146,6 +1186,7 @@ impl Tui {
                 height,
                 screen_size,
                 self.scrollback,
+                composer_bottom_aligned,
             )?;
             // A zero- or one-row history region cannot isolate raw history writes from the
             // viewport, so replayed rows can leave stale cells inside the composer.

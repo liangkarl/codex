@@ -1271,6 +1271,7 @@ fn config_toml_deserializes_model_availability_nux() {
             vim_mode_default: false,
             question_esc_back: true,
             raw_output_mode: false,
+            composer_bottom_aligned: false,
             alternate_screen: AltScreenMode::default(),
             status_line: None,
             status_line_use_colors: true,
@@ -4361,6 +4362,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             vim_mode_default: false,
             question_esc_back: true,
             raw_output_mode: false,
+            composer_bottom_aligned: false,
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
             status_line_use_colors: true,
@@ -4376,6 +4378,24 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             terminal_resize_reflow_max_rows: None,
         }
     );
+}
+
+#[tokio::test]
+async fn composer_bottom_alignment_is_configurable() {
+    for (value, expected) in [
+        ("[tui]", false),
+        ("[tui]\ncomposer_bottom_aligned = true", true),
+    ] {
+        let config_toml = toml::from_str(value).expect("valid TUI config");
+        let config = Config::load_from_base_config_with_overrides(
+            config_toml,
+            ConfigOverrides::default(),
+            tempdir().expect("tempdir").abs(),
+        )
+        .await
+        .expect("load config");
+        assert_eq!(config.tui_composer_bottom_aligned, expected);
+    }
 }
 
 #[tokio::test]
