@@ -295,14 +295,17 @@ impl ChatWidget {
         } else {
             self.flush_active_cell();
 
-            self.transcript.active_cell = Some(Box::new(new_active_exec_command(
-                id,
-                command,
-                parsed_cmd,
-                source,
-                /*interaction_input*/ None,
-                self.local_settings.tui.animations,
-            )));
+            self.transcript.active_cell = Some(Box::new(
+                new_active_exec_command(
+                    id,
+                    command,
+                    parsed_cmd,
+                    source,
+                    /*interaction_input*/ None,
+                    self.local_settings.tui.animations,
+                )
+                .with_markdown_activity(self.local_settings.tui.markdown_activity),
+            ));
             self.bump_active_cell_revision();
         }
 
@@ -423,7 +426,8 @@ impl ChatWidget {
                     source,
                     /*interaction_input*/ None,
                     self.local_settings.tui.animations,
-                );
+                )
+                .with_markdown_activity(self.local_settings.tui.markdown_activity);
                 let completed = orphan.complete_call(&id, output, duration);
                 debug_assert!(completed, "new orphan exec cell should contain {id}");
                 self.app_event_tx
@@ -439,7 +443,8 @@ impl ChatWidget {
                     source,
                     /*interaction_input*/ None,
                     self.local_settings.tui.animations,
-                );
+                )
+                .with_markdown_activity(self.local_settings.tui.markdown_activity);
                 let completed = cell.complete_call(&id, output, duration);
                 debug_assert!(completed, "new exec cell should contain {id}");
                 if cell.should_flush() {

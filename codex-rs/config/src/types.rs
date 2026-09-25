@@ -809,6 +809,11 @@ pub struct Tui {
     #[serde(default)]
     pub raw_output_mode: bool,
 
+    /// Show reasoning titles, commands, output, and diffs as structured Markdown-style activity.
+    /// Defaults to `false`.
+    #[serde(default)]
+    pub markdown_activity: bool,
+
     /// Keep the composer viewport against the bottom edge of the terminal.
     /// Defaults to `false`.
     #[serde(default)]

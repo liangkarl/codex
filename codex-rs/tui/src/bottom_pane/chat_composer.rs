@@ -24,6 +24,8 @@
 //! popup-specific handler if a popup is visible and otherwise to
 //! [`ChatComposer::handle_key_event_without_popup`]. After every handled key, we call
 //! [`ChatComposer::sync_popups`] so UI state follows the latest buffer/cursor.
+//! When bottom alignment is enabled, completion popups render above the draft so opening one
+//! keeps the input at the bottom edge.
 //! Fresh Vim drafts start in Insert; Normal `/` and `?` search the composer.
 //! Backspace on an empty Vim search query cancels search and any pending operator.
 //!
@@ -520,6 +522,7 @@ impl ChatComposerConfig {
 pub(crate) struct ChatComposer {
     draft: DraftState,
     popups: PopupState,
+    popup_above_composer: bool,
     app_event_tx: AppEventSender,
     history: ChatComposerHistory,
     agents_navigation_enabled: bool,
@@ -655,6 +658,7 @@ impl ChatComposer {
         let mut this = Self {
             draft: DraftState::new(),
             popups: PopupState::default(),
+            popup_above_composer: false,
             app_event_tx,
             history: ChatComposerHistory::new(),
             agents_navigation_enabled: false,
@@ -1034,6 +1038,10 @@ impl ChatComposer {
         self.config.popups_enabled
     }
 
+    pub(crate) fn set_popup_above_composer(&mut self, enabled: bool) {
+        self.popup_above_composer = enabled;
+    }
+
     fn slash_commands_enabled(&self) -> bool {
         self.config.slash_commands_enabled
     }
@@ -1065,8 +1073,13 @@ impl ChatComposer {
             .required_height(area.width, footer_total_height);
         let popup_constraint = Constraint::Max(popup_height);
         let voice_rows = if self.voice_strip.is_some() { 3 } else { 0 };
-        let [composer_rect, popup_rect] =
-            Layout::vertical([Constraint::Min(3 + voice_rows), popup_constraint]).areas(area);
+        let [composer_rect, popup_rect] = if self.popup_above_composer && self.popups.active() {
+            let [popup_rect, composer_rect] =
+                Layout::vertical([popup_constraint, Constraint::Min(3 + voice_rows)]).areas(area);
+            [composer_rect, popup_rect]
+        } else {
+            Layout::vertical([Constraint::Min(3 + voice_rows), popup_constraint]).areas(area)
+        };
         // Keep the draft visible when clipped.
         let voice_rows = voice_rows * u16::from(composer_rect.height >= 6);
         let mut textarea_rect = composer_rect.inset(Insets::tlbr(
@@ -5135,6 +5148,24 @@ mod tests {
             ),
             rx,
         )
+    }
+
+    #[test]
+    fn bottom_aligned_command_popup_stays_above_composer() {
+        let (mut composer, _rx) = new_test_composer();
+        composer.insert_str("/mod");
+        assert!(matches!(composer.popups.active, ActivePopup::Command(_)));
+
+        let width = 80;
+        let area = Rect::new(0, 0, width, composer.desired_height(width));
+        let [composer_before, _, _, popup_before] = composer.layout_areas(area);
+        assert_eq!(popup_before.y, composer_before.bottom());
+
+        composer.set_popup_above_composer(true);
+        let [composer_after, _, _, popup_after] = composer.layout_areas(area);
+        assert_eq!(popup_after.bottom(), composer_after.y);
+        assert_eq!(composer_after.bottom(), area.bottom());
+        assert!(popup_after.height > 0);
     }
 
     #[test]

@@ -76,6 +76,7 @@ pub(crate) struct ExecCall {
 pub(crate) struct ExecCell {
     pub(crate) calls: Vec<ExecCall>,
     animations_enabled: bool,
+    markdown_activity: bool,
 }
 
 impl ExecCell {
@@ -83,7 +84,17 @@ impl ExecCell {
         Self {
             calls: vec![call],
             animations_enabled,
+            markdown_activity: false,
         }
+    }
+
+    pub(crate) fn with_markdown_activity(mut self, enabled: bool) -> Self {
+        self.markdown_activity = enabled;
+        self
+    }
+
+    pub(crate) fn markdown_activity(&self) -> bool {
+        self.markdown_activity
     }
 
     pub(crate) fn add_call(

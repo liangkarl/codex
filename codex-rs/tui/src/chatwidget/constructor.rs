@@ -324,6 +324,9 @@ impl ChatWidget {
             &widget.local_settings.tui.prompt_symbol,
             widget.local_settings.tui.prompt_effects,
         );
+        widget
+            .bottom_pane
+            .set_composer_bottom_aligned(widget.local_settings.tui.composer_bottom_aligned);
         widget.bottom_pane.set_astra_sparkle(
             widget.effective_collaboration_mode().model(),
             &widget.local_settings.tui,

@@ -187,6 +187,8 @@ impl HistoryCell for ExecCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         if self.is_exploring_cell() {
             self.exploring_display_lines(width)
+        } else if self.markdown_activity() {
+            self.markdown_command_display_lines(width)
         } else {
             self.command_display_lines(width)
         }
@@ -244,6 +246,90 @@ impl HistoryCell for ExecCell {
 }
 
 impl ExecCell {
+    fn markdown_command_display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let [call] = self.calls.as_slice() else {
+            panic!("Expected exactly one call in a command display cell");
+        };
+        let title = if self.is_active() {
+            "Running"
+        } else if call
+            .output
+            .as_ref()
+            .is_some_and(|output| output.exit_code != 0)
+        {
+            "Failed"
+        } else if call.is_user_shell_command() {
+            "You ran"
+        } else {
+            "Ran"
+        };
+        let marker = if self.is_active() {
+            activity_marker(call.start_time, self.animations_enabled())
+        } else if title == "Failed" {
+            "•".red().bold()
+        } else {
+            "•".green().bold()
+        };
+        let mut heading = vec![marker, " ".into(), title.bold()];
+        if let Some(started_at) = call.start_time {
+            heading.push(format!(" · {}", format_duration(started_at.elapsed())).dim());
+        }
+        let mut lines = vec![Line::from(heading)];
+        let command = if call.is_unified_exec_interaction() {
+            format_unified_exec_interaction(&call.command, call.interaction_input.as_deref())
+        } else {
+            strip_bash_lc_and_escape(&call.command)
+        };
+        let highlighted = highlight_bash_to_lines(&command);
+        lines.extend(adaptive_wrap_lines(
+            &highlighted,
+            RtOptions::new(width as usize)
+                .initial_indent("  $ ".magenta().into())
+                .subsequent_indent("    ".into()),
+        ));
+        if let Some(output) = call.output.as_ref() {
+            if !call.is_unified_exec_interaction() {
+                lines.push(Line::from("  Output".bold()));
+                let line_limit = if call.is_user_shell_command() {
+                    USER_SHELL_TOOL_CALL_MAX_LINES
+                } else {
+                    TOOL_CALL_MAX_LINES
+                };
+                let raw = output_lines(
+                    Some(output),
+                    OutputLinesParams {
+                        line_limit,
+                        only_err: false,
+                        include_angle_pipe: false,
+                        include_prefix: false,
+                    },
+                );
+                if raw.lines.is_empty() {
+                    lines.push(Line::from("    (no output)".dim()));
+                } else {
+                    let wrapped = adaptive_wrap_lines(
+                        &raw.lines,
+                        RtOptions::new(width.saturating_sub(4).max(1) as usize)
+                            .word_splitter(WordSplitter::NoHyphenation),
+                    );
+                    let prefixed = prefix_lines(wrapped, "    ".into(), "    ".into());
+                    lines.extend(Self::truncate_lines_middle(
+                        &prefixed,
+                        if call.is_user_shell_command() {
+                            USER_SHELL_TOOL_CALL_MAX_LINES
+                        } else {
+                            EXEC_DISPLAY_LAYOUT.output_max_lines
+                        },
+                        width,
+                        raw.omitted,
+                        Some(Line::from("    ")),
+                    ));
+                }
+            }
+        }
+        lines
+    }
+
     fn output_ellipsis_text(omitted: usize) -> String {
         format!("… +{omitted} lines ({TRANSCRIPT_HINT})")
     }
@@ -333,7 +419,14 @@ impl ExecCell {
 
             for (title, line) in call_lines {
                 let line = Line::from(line);
-                let initial_indent = Line::from(vec![title.cyan(), " ".into()]);
+                let initial_indent = Line::from(vec![
+                    if self.markdown_activity() {
+                        title.bold()
+                    } else {
+                        title.cyan()
+                    },
+                    " ".into(),
+                ]);
                 let subsequent_indent = " ".repeat(initial_indent.width()).into();
                 let wrapped = adaptive_wrap_line(
                     &line,
@@ -345,7 +438,11 @@ impl ExecCell {
             }
         }
 
-        out.extend(prefix_lines(out_indented, "  └ ".dim(), "    ".into()));
+        if self.markdown_activity() {
+            out.extend(prefix_lines(out_indented, "  ".into(), "  ".into()));
+        } else {
+            out.extend(prefix_lines(out_indented, "  └ ".dim(), "    ".into()));
+        }
         out
     }
 

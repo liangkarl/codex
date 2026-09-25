@@ -329,7 +329,14 @@ impl ChatWidget {
             .or(self.reasoning_header.take());
         if !self.reasoning_summary_parts.is_empty() {
             let reasoning_parts = std::mem::take(&mut self.reasoning_summary_parts);
-            let cell = history_cell::new_reasoning_summary_block(reasoning_parts, &self.config.cwd);
+            let cell = if self.local_settings.tui.markdown_activity {
+                history_cell::new_markdown_reasoning_summary_block(
+                    reasoning_parts,
+                    &self.config.cwd,
+                )
+            } else {
+                history_cell::new_reasoning_summary_block(reasoning_parts, &self.config.cwd)
+            };
             self.add_boxed_history(cell);
         }
         self.reasoning_buffer.clear();

@@ -1730,6 +1730,10 @@ impl ChatWidget {
         self.bottom_pane.composer_is_empty() && !self.bottom_pane.is_in_paste_burst()
     }
 
+    pub(crate) fn set_composer_bottom_aligned(&mut self, enabled: bool) {
+        self.bottom_pane.set_composer_bottom_aligned(enabled);
+    }
+
     pub(crate) fn composer_is_vim_enabled(&self) -> bool {
         self.bottom_pane.composer_is_vim_enabled()
     }

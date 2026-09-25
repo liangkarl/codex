@@ -329,11 +329,12 @@ impl HistoryCell for UserHistoryCell {
 
 #[derive(Debug)]
 pub(crate) struct ReasoningSummaryCell {
-    _header: String,
+    header: String,
     content: String,
     /// Session cwd used to render local file links inside the reasoning body.
     cwd: PathBuf,
     transcript_only: bool,
+    markdown_activity: bool,
 }
 
 impl ReasoningSummaryCell {
@@ -341,17 +342,51 @@ impl ReasoningSummaryCell {
     /// cwd active when the summary was recorded.
     pub(crate) fn new(header: String, content: String, cwd: &Path, transcript_only: bool) -> Self {
         Self {
-            _header: header,
+            header,
             content,
             cwd: cwd.to_path_buf(),
             transcript_only,
+            markdown_activity: false,
         }
     }
 
+    pub(crate) fn with_markdown_activity(mut self, enabled: bool) -> Self {
+        self.markdown_activity = enabled;
+        self
+    }
+
+    fn heading_and_body(&self) -> (Option<&str>, &str) {
+        let header = self.header.trim();
+        let (heading, body) = if header.is_empty() {
+            match self
+                .content
+                .strip_prefix("**")
+                .and_then(|text| text.strip_suffix("**"))
+            {
+                Some(title) if !title.contains('\n') => (title, ""),
+                _ => return (None, &self.content),
+            }
+        } else {
+            (
+                header
+                    .strip_prefix("**")
+                    .and_then(|text| text.strip_suffix("**"))
+                    .unwrap_or(header),
+                self.content.as_str(),
+            )
+        };
+        (Some(heading), body)
+    }
+
     fn lines(&self, width: u16) -> Vec<Line<'static>> {
+        let (heading, body) = if self.markdown_activity {
+            self.heading_and_body()
+        } else {
+            (None, self.content.as_str())
+        };
         let mut lines: Vec<Line<'static>> = Vec::new();
         append_markdown(
-            &self.content,
+            body,
             crate::width::usable_content_width_u16(width, /*reserved_cols*/ 2),
             Some(self.cwd.as_path()),
             &mut lines,
@@ -369,12 +404,31 @@ impl ReasoningSummaryCell {
             })
             .collect::<Vec<_>>();
 
-        adaptive_wrap_lines(
+        let body_lines = adaptive_wrap_lines(
             &summary_lines,
             RtOptions::new(width as usize)
-                .initial_indent("• ".dim().into())
+                .initial_indent(if heading.is_some() {
+                    "  ".into()
+                } else {
+                    "• ".dim().into()
+                })
                 .subsequent_indent("  ".into()),
-        )
+        );
+        if let Some(heading) = heading {
+            let heading_line = Line::from(heading.to_string().bold());
+            let wrapped = adaptive_wrap_line(
+                &heading_line,
+                RtOptions::new(width as usize)
+                    .initial_indent("• ".dim().into())
+                    .subsequent_indent("  ".into()),
+            );
+            let mut result = Vec::new();
+            push_owned_lines(&wrapped, &mut result);
+            result.extend(body_lines);
+            result
+        } else {
+            body_lines
+        }
     }
 }
 
@@ -394,6 +448,17 @@ impl HistoryCell for ReasoningSummaryCell {
     fn raw_lines(&self) -> Vec<Line<'static>> {
         if self.transcript_only {
             Vec::new()
+        } else if self.markdown_activity {
+            let (heading, body) = self.heading_and_body();
+            match heading {
+                Some(heading) if body.trim().is_empty() => {
+                    raw_lines_from_source(&format!("### {heading}"))
+                }
+                Some(heading) => {
+                    raw_lines_from_source(&format!("### {heading}\n\n{}", body.trim()))
+                }
+                None => raw_lines_from_source(body.trim()),
+            }
         } else {
             raw_lines_from_source(self.content.trim())
         }
@@ -729,6 +794,17 @@ pub(crate) fn new_reasoning_summary_block(
     Box::new(ReasoningSummaryCell::new(
         header, content, cwd, /*transcript_only*/ true,
     ))
+}
+
+pub(crate) fn new_markdown_reasoning_summary_block(
+    reasoning_parts: Vec<String>,
+    cwd: &Path,
+) -> Box<dyn HistoryCell> {
+    let (header, content) = split_reasoning_summary_parts(&reasoning_parts);
+    Box::new(
+        ReasoningSummaryCell::new(header, content, cwd, /*transcript_only*/ true)
+            .with_markdown_activity(true),
+    )
 }
 
 /// Split structured reasoning-summary parts into the status header and renderable content.

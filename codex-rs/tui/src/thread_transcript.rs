@@ -178,13 +178,21 @@ pub(crate) fn thread_items_to_transcript_cells(
                     } else {
                         split_reasoning_summary_parts(&summary)
                     };
-                if !text.trim().is_empty() {
-                    cells.push(Arc::new(ReasoningSummaryCell::new(
-                        header,
-                        text,
-                        cwd.as_path(),
-                        /*transcript_only*/ false,
-                    )));
+                if !text.trim().is_empty()
+                    || config.is_some_and(|config| config.tui_markdown_activity)
+                        && !header.trim().is_empty()
+                {
+                    cells.push(Arc::new(
+                        ReasoningSummaryCell::new(
+                            header,
+                            text,
+                            cwd.as_path(),
+                            /*transcript_only*/ false,
+                        )
+                        .with_markdown_activity(
+                            config.is_some_and(|config| config.tui_markdown_activity),
+                        ),
+                    ));
                 }
             }
             other => {

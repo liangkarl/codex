@@ -184,6 +184,8 @@ impl StartupDraftPump {
             &local_settings.tui.prompt_symbol,
             local_settings.tui.prompt_effects,
         );
+        self.bottom_pane
+            .set_composer_bottom_aligned(local_settings.tui.composer_bottom_aligned);
         self.bottom_pane.request_redraw();
         if let Ok(keymap) = RuntimeKeymap::from_config(&local_settings.tui.keymap) {
             self.bottom_pane.set_keymap_bindings(&keymap);

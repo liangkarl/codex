@@ -2715,6 +2715,87 @@ fn reasoning_summary_block() {
 }
 
 #[test]
+fn markdown_activity_shows_reasoning_heading_in_transcript() {
+    let cell = new_markdown_reasoning_summary_block(
+        vec!["**Checking repository**\n\nFound the configuration.".to_string()],
+        &test_cwd(),
+    );
+    insta::assert_snapshot!(render_transcript(cell.as_ref()).join("\n"), @"• Checking repository
+  Found the configuration.");
+}
+
+#[test]
+fn markdown_activity_separates_command_and_output() {
+    let call_id = "markdown-command".to_string();
+    let mut cell = ExecCell::new(
+        ExecCall {
+            call_id: call_id.clone(),
+            command: vec!["bash".into(), "-lc".into(), "printf 'hello\\n'".into()],
+            parsed: Vec::new(),
+            output: None,
+            source: ExecCommandSource::Agent,
+            start_time: Some(Instant::now()),
+            duration: None,
+            interaction_input: None,
+        },
+        /*animations_enabled*/ false,
+    )
+    .with_markdown_activity(true);
+    cell.complete_call(
+        &call_id,
+        CommandOutput::new(/*exit_code*/ 0, "hello".to_string()),
+        Duration::from_millis(1),
+    );
+    insta::assert_snapshot!(render_lines(&cell.display_lines(/*width*/ 80)).join("\n"), @"• Ran
+  $ printf 'hello\\n'
+  Output
+    hello");
+}
+
+#[test]
+fn markdown_activity_lists_exploration_without_tree_gutter() {
+    let call_id = "markdown-search".to_string();
+    let mut cell = ExecCell::new(
+        ExecCall {
+            call_id: call_id.clone(),
+            command: vec!["rg".into(), "heading".into()],
+            parsed: vec![ParsedCommand::Search {
+                cmd: "rg heading".into(),
+                query: Some("heading".into()),
+                path: None,
+            }],
+            output: None,
+            source: ExecCommandSource::Agent,
+            start_time: Some(Instant::now()),
+            duration: None,
+            interaction_input: None,
+        },
+        /*animations_enabled*/ false,
+    )
+    .with_markdown_activity(true);
+    cell.complete_call(&call_id, CommandOutput::default(), Duration::from_millis(1));
+    insta::assert_snapshot!(render_lines(&cell.display_lines(/*width*/ 80)).join("\n"), @"• Explored
+  Search heading");
+}
+
+#[test]
+fn markdown_activity_groups_patch_under_changes_heading() {
+    let cell = new_patch_event(
+        HashMap::from([(
+            test_cwd().join("example.txt"),
+            FileChange::Add {
+                content: "hello\n".to_string(),
+            },
+        )]),
+        &test_cwd(),
+    )
+    .with_markdown_activity(true);
+    let lines = cell.display_lines(/*width*/ 80);
+    insta::assert_snapshot!(render_lines(&lines[..2]).join("\n"), @"• Changes
+  Added example.txt (+1 -0)");
+}
+
+#[test]
 fn reasoning_summary_height_matches_wrapped_rendering_for_url_like_content() {
     let summary = "example.test/api/v1/projects/alpha-team/releases/2026-02-17/builds/1234567890/artifacts/reports/performance/summary/detail/with/a/very/long/path/that/keeps/going";
     let cell: Box<dyn HistoryCell> = Box::new(ReasoningSummaryCell::new(

@@ -1,7 +1,7 @@
 //! The bottom pane is the interactive footer of the chat UI.
 //!
 //! The pane owns the [`ChatComposer`] (editable prompt input) and a stack of transient
-//! [`BottomPaneView`]s (popups/modals) that temporarily replace the composer for focused
+//! [`BottomPaneView`]s (popups/modals) that temporarily take focus from the composer for focused
 //! interactions like selection lists.
 //!
 //! Input routing is layered: `BottomPane` decides which local surface receives a key (view vs
@@ -248,8 +248,9 @@ pub(crate) struct BottomPane {
     /// input state is retained when the view is closed.
     composer: ChatComposer,
 
-    /// Stack of views displayed instead of the composer (e.g. popups/modals).
+    /// Stack of views displayed instead of or above the composer (e.g. popups/modals).
     view_stack: Vec<Box<dyn BottomPaneView>>,
+    composer_bottom_aligned: bool,
     pub(crate) questions: Option<Box<AsyncQuestions>>,
     delayed_approval_requests: VecDeque<DelayedApprovalRequest>,
     last_composer_activity_at: Option<Instant>,
@@ -332,6 +333,7 @@ impl BottomPane {
         Self {
             composer,
             view_stack: Vec::new(),
+            composer_bottom_aligned: false,
             questions: None,
             delayed_approval_requests: VecDeque::new(),
             last_composer_activity_at: None,
@@ -373,6 +375,14 @@ impl BottomPane {
     pub(crate) fn set_prompt_appearance(&mut self, symbol: &str, effects_enabled: bool) {
         self.composer.set_prompt_appearance(symbol, effects_enabled);
         self.request_redraw();
+    }
+
+    pub(crate) fn set_composer_bottom_aligned(&mut self, enabled: bool) {
+        if self.composer_bottom_aligned != enabled {
+            self.composer_bottom_aligned = enabled;
+            self.composer.set_popup_above_composer(enabled);
+            self.request_redraw();
+        }
     }
 
     /// Mirrors the effective reasoning effort into the composer so its next
@@ -1991,7 +2001,20 @@ impl BottomPane {
             banner.visible.set(false);
         }
         if let Some(view) = self.active_view() {
-            RenderableItem::Borrowed(view)
+            if self.composer_bottom_aligned && view.show_composer_below_when_bottom_aligned() {
+                let mut flex = FlexRenderable::new();
+                flex.push(/*flex*/ 1, RenderableItem::Borrowed(view));
+                flex.push(
+                    /*flex*/ 0,
+                    RenderableItem::Owned(Box::new(InactiveComposerRenderable {
+                        composer: &self.composer,
+                        right_reserve: composer_right_reserve,
+                    })),
+                );
+                RenderableItem::Owned(Box::new(flex))
+            } else {
+                RenderableItem::Borrowed(view)
+            }
         } else {
             let mut flex = FlexRenderable::new();
             if let Some(banner) = self
@@ -2135,6 +2158,27 @@ impl BottomPane {
 struct ChatComposerRightReserveRenderable<'a> {
     composer: &'a chat_composer::ChatComposer,
     right_reserve: u16,
+}
+
+struct InactiveComposerRenderable<'a> {
+    composer: &'a chat_composer::ChatComposer,
+    right_reserve: u16,
+}
+
+impl Renderable for InactiveComposerRenderable<'_> {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        self.composer.render_with_mask_and_textarea_right_reserve(
+            area,
+            buf,
+            /*mask_char*/ None,
+            self.right_reserve,
+        );
+    }
+
+    fn desired_height(&self, width: u16) -> u16 {
+        self.composer
+            .desired_height_with_textarea_right_reserve(width, self.right_reserve)
+    }
 }
 
 impl Renderable for ChatComposerRightReserveRenderable<'_> {
@@ -2977,6 +3021,40 @@ mod tests {
             "status_and_composer_fill_height_without_bottom_padding",
             render_snapshot(&pane, area)
         );
+    }
+
+    #[test]
+    fn bottom_aligned_selection_view_keeps_composer_below_list() {
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let mut pane = test_pane(AppEventSender::new(tx));
+        pane.set_composer_bottom_aligned(true);
+        let width = 80;
+        let composer_height = pane.desired_height(width);
+        let composer_before = render_snapshot(&pane, Rect::new(0, 0, width, composer_height));
+        let prompt_offset_before = composer_before
+            .lines()
+            .rev()
+            .position(|line| line.contains('›'))
+            .expect("idle composer visible");
+        pane.show_selection_view(SelectionViewParams {
+            title: Some("Select Model".to_string()),
+            items: vec![SelectionItem {
+                name: "Example Model".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+
+        let area = Rect::new(0, 0, width, pane.desired_height(width));
+        let rendered = render_snapshot(&pane, area);
+        let list_position = rendered.find("Example Model").expect("list item visible");
+        let composer_position = rendered.rfind('›').expect("composer visible");
+        assert!(list_position < composer_position, "{rendered}");
+        assert_eq!(
+            rendered.lines().rev().position(|line| line.contains('›')),
+            Some(prompt_offset_before)
+        );
+        assert_eq!(pane.cursor_pos(area), None);
     }
 
     #[test]

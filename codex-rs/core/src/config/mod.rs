@@ -779,6 +779,9 @@ pub struct Config {
     /// Start the TUI in raw scrollback mode for copy-friendly transcript output.
     pub tui_raw_output_mode: bool,
 
+    /// Render TUI activity with Markdown-style headings and code blocks.
+    pub tui_markdown_activity: bool,
+
     /// Keep the TUI composer viewport against the bottom edge of the terminal.
     pub tui_composer_bottom_aligned: bool,
 
@@ -4428,6 +4431,11 @@ impl Config {
                 .tui
                 .as_ref()
                 .map(|t| t.raw_output_mode)
+                .unwrap_or(false),
+            tui_markdown_activity: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.markdown_activity)
                 .unwrap_or(false),
             tui_composer_bottom_aligned: cfg
                 .tui

@@ -38,6 +38,7 @@ impl From<&Config> for LocalSettings {
                 vim_mode_default: config.tui_vim_mode_default,
                 question_esc_back: config.tui_question_esc_back,
                 raw_output_mode: config.tui_raw_output_mode,
+                markdown_activity: config.tui_markdown_activity,
                 composer_bottom_aligned: config.tui_composer_bottom_aligned,
                 alternate_screen: config.tui_alternate_screen,
                 status_line: config.tui_status_line.clone(),

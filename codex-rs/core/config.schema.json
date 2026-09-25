@@ -4201,6 +4201,11 @@
           },
           "description": "Keybinding overrides for the TUI.\n\nThis supports rebinding selected actions globally and by context. Context bindings take precedence over `global` bindings."
         },
+        "markdown_activity": {
+          "default": false,
+          "description": "Show reasoning titles, commands, output, and diffs as structured Markdown-style activity. Defaults to `false`.",
+          "type": "boolean"
+        },
         "model_availability_nux": {
           "allOf": [
             {

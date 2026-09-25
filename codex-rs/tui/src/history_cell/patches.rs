@@ -7,11 +7,26 @@ use codex_utils_path_uri::LegacyAppPathString;
 pub(crate) struct PatchHistoryCell {
     changes: HashMap<PathBuf, FileChange>,
     cwd: PathBuf,
+    markdown_activity: bool,
+}
+
+impl PatchHistoryCell {
+    pub(crate) fn with_markdown_activity(mut self, enabled: bool) -> Self {
+        self.markdown_activity = enabled;
+        self
+    }
 }
 
 impl HistoryCell for PatchHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        create_diff_summary(&self.changes, &self.cwd, width as usize)
+        let mut lines = create_diff_summary(&self.changes, &self.cwd, width as usize);
+        if self.markdown_activity
+            && let Some(first) = lines.first_mut()
+        {
+            first.spans[0] = "  ".into();
+            lines.insert(0, Line::from(vec!["• ".dim(), "Changes".bold()]));
+        }
+        lines
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
@@ -32,6 +47,7 @@ pub(crate) fn new_patch_event(
     PatchHistoryCell {
         changes,
         cwd: cwd.to_path_buf(),
+        markdown_activity: false,
     }
 }
 

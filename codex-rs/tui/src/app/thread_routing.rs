@@ -419,11 +419,10 @@ impl App {
         if request.thread_label.is_none() || request.changes.is_empty() {
             return;
         }
-        self.chat_widget
-            .add_to_history(history_cell::new_patch_event(
-                request.changes.clone(),
-                &request.cwd,
-            ));
+        self.chat_widget.add_to_history(
+            history_cell::new_patch_event(request.changes.clone(), &request.cwd)
+                .with_markdown_activity(self.config.tui_markdown_activity),
+        );
     }
 
     pub(super) async fn pending_inactive_thread_requests(&self) -> Vec<(ThreadId, ServerRequest)> {
