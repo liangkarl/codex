@@ -57,7 +57,6 @@ use pretty_assertions::assert_eq;
 use ratatui::prelude::*;
 use std::sync::Arc;
 use tempfile::TempDir;
-use unicode_width::UnicodeWidthStr;
 
 #[test]
 fn stale_monthly_limit_marks_fresh_rolling_snapshot_stale() {
@@ -184,30 +183,11 @@ fn render_lines(lines: &[Line<'static>]) -> Vec<String> {
 }
 
 fn sanitize_directory(lines: Vec<String>) -> Vec<String> {
-    let frame_width = lines
-        .iter()
-        .find(|line| line.starts_with('╭'))
-        .map(|line| UnicodeWidthStr::width(line.as_str()));
     lines
         .into_iter()
         .map(|line| {
-            if let (Some(frame_width), Some(dir_pos), Some(pipe_idx)) =
-                (frame_width, line.find("Directory: "), line.rfind('│'))
-            {
-                let prefix = &line[..dir_pos + "Directory: ".len()];
-                let suffix = &line[pipe_idx..];
-                let replacement = "[[workspace]]";
-                let content_width = frame_width.saturating_sub(
-                    UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(suffix),
-                );
-                let mut rebuilt = prefix.to_string();
-                rebuilt.push_str(replacement);
-                let replacement_width = UnicodeWidthStr::width(replacement);
-                if content_width > replacement_width {
-                    rebuilt.push_str(&" ".repeat(content_width - replacement_width));
-                }
-                rebuilt.push_str(suffix);
-                rebuilt
+            if let Some((prefix, _)) = line.split_once("Directory: ") {
+                format!("{prefix}Directory: [[workspace]]")
             } else {
                 line
             }
@@ -757,7 +737,7 @@ async fn status_uses_server_provider_id_and_auth_requirement() {
     let model_slug = get_model_offline_for_tests(config.model.as_deref());
 
     config.model_provider.requires_openai_auth = true;
-    let (composite, _handle) = new_status_output_with_rate_limits_handle(
+    let (composite, handle) = new_status_output_with_rate_limits_handle(
         &config,
         /*requires_openai_auth*/ false,
         Some("server-ollama"),
@@ -766,7 +746,7 @@ async fn status_uses_server_provider_id_and_auth_requirement() {
         /*token_info*/ None,
         &usage,
         &None,
-        /*thread_name*/ None,
+        Some("Review *draft* [notes] <tag> `code`_name\nnext line".to_string()),
         /*forked_from*/ None,
         /*rate_limits*/ &[],
         None,
@@ -776,6 +756,19 @@ async fn status_uses_server_provider_id_and_auth_requirement() {
         /*reasoning_effort_override*/ None,
         "<none>".to_string(),
         /*refreshing_rate_limits*/ false,
+    );
+    assert_snapshot!(
+        "status_markdown_source",
+        handle
+            .copy_text()
+            .lines()
+            .map(|line| if line.starts_with("- **Directory:** ") {
+                "- **Directory:** [[workspace]]"
+            } else {
+                line
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     );
     let rendered =
         sanitize_directory(render_lines(&composite.display_lines(/*width*/ 120))).join("\n");
@@ -829,7 +822,12 @@ async fn status_uses_server_provider_id_and_auth_requirement() {
         .flat_map(|line| line.hyperlinks.into_iter())
         .map(|link| link.destination)
         .collect();
-    assert_eq!(narrow_destinations, Vec::<String>::new());
+    assert!(!narrow_destinations.is_empty());
+    assert!(
+        narrow_destinations
+            .iter()
+            .all(|destination| { destination == "https://chatgpt.com/codex/settings/usage" })
+    );
 }
 
 #[tokio::test]

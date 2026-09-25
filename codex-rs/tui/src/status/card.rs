@@ -1,14 +1,11 @@
 use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
-use crate::history_cell::plain_lines;
-use crate::history_cell::with_border_with_inner_width;
+use crate::history_cell::raw_lines_from_source;
 use crate::legacy_core::config::Config;
-use crate::line_truncation::line_width;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::version::CODEX_CLI_VERSION;
-use crate::width::display_width;
 use chrono::DateTime;
 use chrono::Local;
 use codex_app_server_protocol::AskForApproval;
@@ -26,13 +23,10 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_sandbox_summary::summarize_permission_profile;
 use ratatui::prelude::*;
 use ratatui::style::Stylize;
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use super::account::StatusAccountDisplay;
 use super::format::FieldFormatter;
-use super::format::push_label;
-use super::format::truncate_line_to_width;
 use super::helpers::compose_account_display;
 use super::helpers::compose_model_display;
 use super::helpers::format_directory_display;
@@ -47,9 +41,6 @@ use super::rate_limits::format_status_limit_summary;
 use super::rate_limits::render_status_limit_progress_bar;
 use super::remote_connection::RemoteConnectionStatus;
 use super::thread_usage::StatusThreadUsage;
-use crate::wrapping::RtOptions;
-use crate::wrapping::adaptive_wrap_lines;
-use crate::wrapping::word_wrap_lines;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -83,18 +74,7 @@ pub(crate) struct StatusHistoryHandle {
 
 impl StatusHistoryHandle {
     pub(crate) fn copy_text(&self) -> String {
-        self.card
-            .content_lines(u16::MAX)
-            .iter()
-            .map(|line| line.to_string().trim_end().to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .trim()
-            .to_string()
-    }
-
-    pub(crate) fn reserve_thread_usage_label_width(&self) {
-        self.card.thread_usage.reserve_label_width();
+        self.card.markdown()
     }
 
     pub(crate) fn finish_rate_limit_refresh(
@@ -444,7 +424,6 @@ impl StatusHistoryCell {
     fn rate_limit_lines(
         &self,
         state: &StatusRateLimitState,
-        available_inner_width: usize,
         formatter: &FieldFormatter,
     ) -> Vec<Line<'static>> {
         match &state.rate_limits {
@@ -456,11 +435,10 @@ impl StatusHistoryCell {
                     )];
                 }
 
-                self.rate_limit_row_lines(rows_data, available_inner_width, formatter)
+                self.rate_limit_row_lines(rows_data, formatter)
             }
             StatusRateLimitData::Stale(rows_data) => {
-                let mut lines =
-                    self.rate_limit_row_lines(rows_data, available_inner_width, formatter);
+                let mut lines = self.rate_limit_row_lines(rows_data, formatter);
                 lines.push(formatter.line(
                     "Warning",
                     vec![Span::from(if state.refreshing_rate_limits {
@@ -495,7 +473,6 @@ impl StatusHistoryCell {
     fn rate_limit_row_lines(
         &self,
         rows: &[StatusRateLimitRow],
-        available_inner_width: usize,
         formatter: &FieldFormatter,
     ) -> Vec<Line<'static>> {
         let mut lines = Vec::with_capacity(rows.len().saturating_mul(2));
@@ -509,102 +486,25 @@ impl StatusHistoryCell {
                 } => {
                     let percent_remaining = (100.0 - percent_used).clamp(0.0, 100.0);
                     let summary = format_status_limit_summary(percent_remaining);
-                    let full_value_spans = vec![
-                        Span::from(render_status_limit_progress_bar(percent_remaining)),
-                        Span::from(" "),
-                        Span::from(summary.clone()),
-                    ];
-                    // On narrow terminals, keep the percentage visible rather than
-                    // letting the fixed-width progress bar crowd out the reset time.
-                    let value_spans = if line_width(&Line::from(full_value_spans.clone()))
-                        <= formatter.value_width(available_inner_width)
-                    {
-                        full_value_spans
-                    } else {
-                        vec![Span::from(summary)]
-                    };
-                    let base_spans = formatter.full_spans(row.label.as_str(), value_spans);
-                    let base_line = Line::from(base_spans.clone());
-
-                    if let Some(resets_at) = resets_at.as_ref() {
-                        let resets_span = Span::from(format!("(resets {resets_at})")).dim();
-                        let mut inline_spans = base_spans.clone();
-                        inline_spans.push(Span::from(" ").dim());
-                        inline_spans.push(resets_span.clone());
-
-                        if line_width(&Line::from(inline_spans.clone())) <= available_inner_width {
-                            lines.push(Line::from(inline_spans));
-                        } else {
-                            lines.push(base_line);
-                            let reset_text = format!("(resets {resets_at})");
-                            let reset_width = formatter.value_width(available_inner_width).max(1);
-                            let wrap_options =
-                                textwrap::Options::new(reset_width).break_words(false);
-                            // Reset timestamps are the actionable part of this row, so wrap them
-                            // onto continuation lines instead of truncating partial times/dates.
-                            lines.extend(
-                                textwrap::wrap(reset_text.as_str(), wrap_options)
-                                    .into_iter()
-                                    .map(|wrapped| {
-                                        formatter.continuation(vec![
-                                            Span::from(wrapped.into_owned()).dim(),
-                                        ])
-                                    }),
-                            );
-                        }
-                    } else {
-                        lines.push(base_line);
+                    let mut value = format!(
+                        "{} {summary}",
+                        render_status_limit_progress_bar(percent_remaining)
+                    );
+                    if let Some(resets_at) = resets_at {
+                        value.push_str(&format!(" (resets {resets_at})"));
                     }
+                    lines.push(formatter.line(&row.label, vec![value.into()]));
                     if let Some(details) = details {
-                        let detail_width = formatter.value_width(available_inner_width).max(1);
-                        let wrap_options = textwrap::Options::new(detail_width).break_words(false);
-                        lines.extend(
-                            textwrap::wrap(details.as_str(), wrap_options)
-                                .into_iter()
-                                .map(|wrapped| {
-                                    formatter
-                                        .continuation(vec![Span::from(wrapped.into_owned()).dim()])
-                                }),
-                        );
+                        lines.push(formatter.continuation(vec![details.clone().into()]));
                     }
                 }
                 StatusRateLimitValue::Text(text) => {
-                    let label = row.label.clone();
-                    let spans =
-                        formatter.full_spans(label.as_str(), vec![Span::from(text.clone())]);
-                    lines.push(Line::from(spans));
+                    lines.push(formatter.line(&row.label, vec![text.clone().into()]));
                 }
             }
         }
 
         lines
-    }
-
-    fn collect_rate_limit_labels(
-        &self,
-        state: &StatusRateLimitState,
-        seen: &mut BTreeSet<String>,
-        labels: &mut Vec<String>,
-    ) {
-        match &state.rate_limits {
-            StatusRateLimitData::Available(rows) => {
-                if rows.is_empty() {
-                    push_label(labels, seen, "Limits");
-                } else {
-                    for row in rows {
-                        push_label(labels, seen, row.label.as_str());
-                    }
-                }
-            }
-            StatusRateLimitData::Stale(rows) => {
-                for row in rows {
-                    push_label(labels, seen, row.label.as_str());
-                }
-                push_label(labels, seen, "Warning");
-            }
-            StatusRateLimitData::Unavailable => push_label(labels, seen, "Limits"),
-            StatusRateLimitData::Missing => push_label(labels, seen, "Limits"),
-        }
     }
 }
 
@@ -738,19 +638,9 @@ fn status_approval_label(
 }
 
 impl StatusHistoryCell {
-    fn content_lines(&self, width: u16) -> Vec<Line<'static>> {
+    fn markdown(&self) -> String {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(Line::from(vec![
-            Span::from(format!("{}>_ ", FieldFormatter::INDENT)).dim(),
-            Span::from("OpenAI Codex").bold(),
-            Span::from(" ").dim(),
-            Span::from(format!("(v{CODEX_CLI_VERSION})")).dim(),
-        ]));
-
-        let available_inner_width = usize::from(width.saturating_sub(4));
-        if available_inner_width == 0 {
-            return Vec::new();
-        }
+        lines.push(Line::from(format!("# OpenAI Codex (v{CODEX_CLI_VERSION})")));
 
         let account_value = self.account.as_ref().map(|account| match account {
             StatusAccountDisplay::ChatGpt { email, plan } => match (email, plan) {
@@ -764,11 +654,6 @@ impl StatusHistoryCell {
             }
         });
 
-        let mut labels: Vec<String> = vec!["Model", "Directory", "Permissions", "Agents.md"]
-            .into_iter()
-            .map(str::to_string)
-            .collect();
-        let mut seen: BTreeSet<String> = labels.iter().cloned().collect();
         let thread_name = self.thread_name.as_deref().filter(|name| !name.is_empty());
         #[expect(clippy::expect_used)]
         let rate_limit_state = self
@@ -782,69 +667,29 @@ impl StatusHistoryCell {
             .expect("status history agents summary state poisoned")
             .clone();
 
-        if self.model_provider.is_some() {
-            push_label(&mut labels, &mut seen, "Model provider");
-        }
-        if account_value.is_some() {
-            push_label(&mut labels, &mut seen, "Account");
-        }
-        if thread_name.is_some() {
-            push_label(&mut labels, &mut seen, "Thread name");
-        }
-        if self.session_id.is_some() {
-            push_label(&mut labels, &mut seen, "Session");
-        }
-        if self.session_id.is_some() && self.forked_from.is_some() {
-            push_label(&mut labels, &mut seen, "Forked from");
-        }
-        if self.collaboration_mode.is_some() {
-            push_label(&mut labels, &mut seen, "Collaboration mode");
-        }
-        push_label(&mut labels, &mut seen, "Token usage");
-        if self.token_usage.context_window.is_some() {
-            push_label(&mut labels, &mut seen, "Context window");
-        }
-        self.collect_rate_limit_labels(&rate_limit_state, &mut seen, &mut labels);
-        self.thread_usage.push_labels(&mut labels, &mut seen);
-
-        let formatter = FieldFormatter::from_labels(labels.iter().map(String::as_str));
-        let value_width = formatter.value_width(available_inner_width);
-
-        let note_first_line = Line::from(vec![
-            Span::from("Visit ").cyan(),
-            CHATGPT_USAGE_URL.cyan().underlined(),
-            Span::from(" for up-to-date").cyan(),
-        ]);
-        let note_second_line = Line::from(vec![
-            Span::from("information on rate limits and credits").cyan(),
-        ]);
-        let note_lines = adaptive_wrap_lines(
-            [note_first_line, note_second_line],
-            RtOptions::new(available_inner_width),
-        );
-        lines.push(Line::from(Vec::<Span<'static>>::new()));
+        let formatter = FieldFormatter;
+        lines.push(Line::default());
         // The ChatGPT usage page only applies to providers backed by OpenAI auth;
         // providers like Bedrock manage limits and billing elsewhere.
         if self.show_chatgpt_usage_link {
-            lines.extend(note_lines);
-            lines.push(Line::from(Vec::<Span<'static>>::new()));
+            lines.push(Line::from(format!(
+                "Visit <{CHATGPT_USAGE_URL}> for up-to-date information on rate limits and credits."
+            )));
+            lines.push(Line::default());
         }
+        lines.push(Line::from("## Session"));
+        lines.push(Line::default());
         if let Some(remote_connection) = self.remote_connection.as_ref() {
-            let wrapped_remote = word_wrap_lines(
-                [Line::from(vec![
-                    Span::from(remote_connection.address.clone()),
-                    Span::from(" (").dim(),
-                    Span::from(remote_connection.version.clone()).dim(),
-                    Span::from(")").dim(),
-                ])],
-                RtOptions::new(value_width.max(1)),
-            );
-            let mut wrapped_remote = wrapped_remote.into_iter();
-            if let Some(first) = wrapped_remote.next() {
-                lines.push(formatter.line("Remote", first.spans));
-                lines.extend(wrapped_remote.map(|line| formatter.continuation(line.spans)));
-            }
-            lines.push(Line::from(Vec::<Span<'static>>::new()));
+            lines.push(formatter.line(
+                "Remote",
+                vec![
+                        format!(
+                            "{} ({})",
+                            remote_connection.address, remote_connection.version
+                        )
+                        .into(),
+                    ],
+            ));
         }
 
         let mut model_spans = vec![Span::from(self.model_name.clone())];
@@ -854,7 +699,7 @@ impl StatusHistoryCell {
             model_spans.push(Span::from(")").dim());
         }
 
-        let directory_value = format_directory_display(&self.directory, Some(value_width));
+        let directory_value = format_directory_display(&self.directory, /*max_width*/ None);
 
         lines.push(formatter.line("Model", model_spans));
         if let Some(model_provider) = self.model_provider.as_ref() {
@@ -884,6 +729,8 @@ impl StatusHistoryCell {
         }
 
         lines.push(Line::from(Vec::<Span<'static>>::new()));
+        lines.push(Line::from("## Usage"));
+        lines.push(Line::default());
         // Hide token usage only for ChatGPT subscribers
         if !matches!(self.account, Some(StatusAccountDisplay::ChatGpt { .. })) {
             lines.push(formatter.line("Token usage", self.token_usage_spans()));
@@ -893,61 +740,41 @@ impl StatusHistoryCell {
             lines.push(formatter.line("Context window", spans));
         }
 
-        lines.extend(self.rate_limit_lines(&rate_limit_state, available_inner_width, &formatter));
-        let thread_usage_lines = self.thread_usage.lines(&formatter, value_width);
-        if !thread_usage_lines.is_empty() {
-            lines.push(Line::from(Vec::<Span<'static>>::new()));
-            lines.extend(thread_usage_lines);
-        }
+        lines.extend(self.rate_limit_lines(&rate_limit_state, &formatter));
+        lines.extend(self.thread_usage.lines(&formatter));
 
         lines
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
 impl HistoryCell for Arc<StatusHistoryCell> {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let available_inner_width = usize::from(width.saturating_sub(4));
-        if available_inner_width == 0 {
-            return Vec::new();
-        }
-        let lines = self.content_lines(width);
-        let content_width = lines.iter().map(line_width).max().unwrap_or(0);
-        let inner_width = content_width.min(available_inner_width);
-        let truncated_lines: Vec<Line<'static>> = lines
+        self.display_hyperlink_lines(width)
             .into_iter()
-            .map(|line| truncate_line_to_width(line, inner_width))
-            .collect();
-
-        with_border_with_inner_width(truncated_lines, inner_width)
+            .map(|line| line.line)
+            .collect()
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        plain_lines(self.display_lines(u16::MAX))
+        raw_lines_from_source(&self.markdown())
     }
 
     fn display_hyperlink_lines(
         &self,
         width: u16,
     ) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
-        let mut lines =
-            crate::terminal_hyperlinks::plain_hyperlink_lines(self.display_lines(width));
-        for line in &mut lines {
-            let visible = line
-                .line
-                .spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>();
-            if let Some(start_byte) = visible.find(CHATGPT_USAGE_URL) {
-                let start = display_width(&visible[..start_byte]);
-                line.hyperlinks
-                    .push(crate::terminal_hyperlinks::TerminalHyperlink::web(
-                        start..start + display_width(CHATGPT_USAGE_URL),
-                        CHATGPT_USAGE_URL.to_string(),
-                    ));
-            }
+        if width == 0 {
+            return Vec::new();
         }
-        lines
+        crate::markdown_render::render_markdown_lines_with_width_and_cwd(
+            &self.markdown(),
+            Some(usize::from(width)),
+            Some(&self.directory),
+        )
     }
 
     fn transcript_hyperlink_lines(

@@ -1,20 +1,14 @@
 //! Live-updating, thread-scoped billing details embedded in `/status` history cards.
 
 use super::format::FieldFormatter;
-use super::format::push_label;
 use super::helpers::format_tokens_compact;
-use crate::wrapping::RtOptions;
-use crate::wrapping::word_wrap_lines;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadUsageBreakdownGroup;
 use ratatui::prelude::Line;
 use ratatui::style::Stylize;
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::RwLock;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 
 const REASONING_ORDER: [&str; 8] = [
     "None",
@@ -36,15 +30,9 @@ const BILLED_TOKENS_LABEL: &str = "  Billed tokens";
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StatusThreadUsage {
     estimate: Arc<RwLock<Option<ThreadUsage>>>,
-    reserve_label_width: Arc<AtomicBool>,
 }
 
 impl StatusThreadUsage {
-    pub(crate) fn reserve_label_width(&self) {
-        self.reserve_label_width
-            .store(/*val*/ true, Ordering::Relaxed);
-    }
-
     pub(crate) fn set_estimate(&self, estimate: Option<ThreadUsage>) {
         #[expect(clippy::expect_used)]
         let mut stored_estimate = self
@@ -54,40 +42,7 @@ impl StatusThreadUsage {
         *stored_estimate = estimate;
     }
 
-    pub(crate) fn push_labels(&self, labels: &mut Vec<String>, seen: &mut BTreeSet<String>) {
-        // Keep existing card rows stable when asynchronous billing details arrive. Reserving a
-        // formatter label does not emit a loading placeholder or an empty billing row.
-        if self.reserve_label_width.load(Ordering::Relaxed) {
-            push_label(labels, seen, BILLED_TOKENS_LABEL);
-        }
-        #[expect(clippy::expect_used)]
-        let stored_estimate = self
-            .estimate
-            .read()
-            .expect("status history thread-usage state poisoned");
-        let Some(estimate) = stored_estimate.as_ref() else {
-            return;
-        };
-        push_label(labels, seen, "Thread usage");
-        if !estimate.groups.is_empty() {
-            push_label(labels, seen, MODELS_LABEL);
-            push_label(labels, seen, REASONING_LABEL);
-            push_label(labels, seen, SPEED_LABEL);
-            if estimate
-                .groups
-                .iter()
-                .any(|group| group.input_tokens.is_some() || group.output_tokens.is_some())
-            {
-                push_label(labels, seen, BILLED_TOKENS_LABEL);
-            }
-        }
-    }
-
-    pub(crate) fn lines(
-        &self,
-        formatter: &FieldFormatter,
-        value_width: usize,
-    ) -> Vec<Line<'static>> {
+    pub(crate) fn lines(&self, formatter: &FieldFormatter) -> Vec<Line<'static>> {
         #[expect(clippy::expect_used)]
         let stored_estimate = self
             .estimate
@@ -116,15 +71,7 @@ impl StatusThreadUsage {
             let Some(value) = grouped_usage(&estimate.groups, dimension) else {
                 continue;
             };
-            let mut wrapped = word_wrap_lines(
-                [Line::from(value)],
-                RtOptions::new(value_width.max(/*other*/ 1)),
-            )
-            .into_iter();
-            if let Some(first) = wrapped.next() {
-                lines.push(formatter.line(label, first.spans));
-                lines.extend(wrapped.map(|line| formatter.continuation(line.spans)));
-            }
+            lines.push(formatter.line(label, vec![value.into()]));
         }
 
         let sum_tokens = |count: fn(&ThreadUsageBreakdownGroup) -> Option<i64>| {

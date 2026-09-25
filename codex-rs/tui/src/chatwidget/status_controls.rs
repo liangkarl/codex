@@ -266,7 +266,6 @@ impl ChatWidget {
                 .push((request_id, handle.clone()));
         }
         if self.thread_usage_is_available() {
-            handle.reserve_thread_usage_label_width();
             handle.set_thread_usage(self.estimated_thread_usage().cloned());
             self.add_to_history(cell);
             self.request_thread_usage_for_status(handle.clone());
